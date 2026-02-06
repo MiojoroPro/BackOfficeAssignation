@@ -3,7 +3,7 @@ setlocal
 
 REM ====== CONFIGURATION ======
 set APP_NAME=reservation
-set TOMCAT_WEBAPPS=C:\Bossy\apache-tomcat-10.1.28\webapps
+set TOMCAT_WEBAPPS=C:\xampp\tomcat_2\webapps
 set SRC_DIR=src
 set WEBAPP_DIR=webapp
 set LIB_DIR=lib
@@ -29,7 +29,7 @@ echo ==== Compilation ====
 set CLASSPATH=%LIB_DIR%\*
 
 dir /s /b %SRC_DIR%\*.java > sources.txt
-javac -d "%BUILD_DIR%\WEB-INF\classes" -cp "%CLASSPATH%" @sources.txt
+javac -source 21 -target 21 -d "%BUILD_DIR%\WEB-INF\classes" -cp "%CLASSPATH%" @sources.txt
 if errorlevel 1 (
     echo Erreur de compilation!
     del sources.txt
