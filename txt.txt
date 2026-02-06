@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": 2,
+      "idClient": "CB23",
+      "nbpassagers": 10,
+      "dateheure": "Feb 14, 2026, 3:20:00 PM",
+      "idHotel": 1,
+      "hotelNom": "H“tel du Centre"
+    },
+    {
+      "id": 1,
+      "idClient": "AB12",
+      "nbpassagers": 1,
+      "dateheure": "Feb 6, 2026, 3:19:00 PM",
+      "idHotel": 1,
+      "hotelNom": "H“tel du Centre"
+    }
+  ],
+  "status": "success",
+  "code": 200,
+  "count": 2
+}
