@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS assignation;
+CREATE DATABASE assignation;
 \c assignation;
 
 CREATE TABLE Hotel(
-    id_Hotel SERIAL PRIMARY KEY,
+    id_Hotel SERIAL PRIMARY KEY,    
     nom VARCHAR(255) NOT NULL,
     adresse VARCHAR(255) NOT NULL
 );

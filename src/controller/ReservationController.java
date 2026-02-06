@@ -23,6 +23,12 @@ public class ReservationController {
     private final ReservationDao reservationDao = new ReservationDao();
     private final DateTimeFormatter inputFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
+    @MyMapping("/")
+    @GET
+    public ModelView home() throws Exception {
+        return showForm();
+    }
+
     @MyMapping("/reservations/new")
     @GET
     public ModelView showForm() throws Exception {
