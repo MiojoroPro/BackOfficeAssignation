@@ -1,6 +1,6 @@
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="java.util.List" %>
-<%@ page import="model.Hotel" %>
+<%@ page import="model.Lieu" %>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -21,9 +21,23 @@
         input[type="submit"]:hover { background-color: #45a049; }
         .error { color: red; margin-bottom: 15px; padding: 10px; background-color: #fee; }
         .info { background: #e7f3fe; padding: 10px; margin-bottom: 20px; border-left: 4px solid #2196F3; }
+        .nav { margin-bottom: 20px; }
+        .nav a { 
+            display: inline-block; 
+            padding: 10px 20px; 
+            background: #667eea; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 5px; 
+        }
+        .nav a:hover { background: #764ba2; }
     </style>
 </head>
 <body>
+    <div class="nav">
+        <a href="${pageContext.request.contextPath}/affectation">🚐 Gestion des Affectations</a>
+    </div>
+
     <h1>Nouvelle Réservation</h1>
     
     <% String error = (String) request.getAttribute("error"); %>
@@ -42,18 +56,18 @@
         <label for="nbpassagers">Nombre de passagers</label>
         <input type="number" id="nbpassagers" name="nbpassagers" min="1" required>
 
-        <label for="dateheure">Date et heure</label>
+        <label for="dateheure">Date et heure de départ (depuis l'aéroport)</label>
         <input type="datetime-local" id="dateheure" name="dateheure" required>
 
-        <label for="idHotel">Hôtel</label>
-        <select id="idHotel" name="idHotel" required>
+        <label for="idLieu">Hôtel de destination</label>
+        <select id="idLieu" name="idLieu" required>
             <option value="">-- Sélectionner un hôtel --</option>
             <% 
-                List<Hotel> hotels = (List<Hotel>) request.getAttribute("hotels");
+                List<Lieu> hotels = (List<Lieu>) request.getAttribute("hotels");
                 if (hotels != null) {
-                    for (Hotel hotel : hotels) { 
+                    for (Lieu hotel : hotels) { 
             %>
-                <option value="<%= hotel.getIdHotel() %>"><%= hotel.getNom() %> - <%= hotel.getAdresse() %></option>
+                <option value="<%= hotel.getId() %>"><%= hotel.getCode() %> - <%= hotel.getLibelle() %></option>
             <% 
                     }
                 }

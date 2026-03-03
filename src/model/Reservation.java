@@ -1,25 +1,29 @@
 package model;
 
 import java.sql.Timestamp;
+import java.sql.Date;
 
 public class Reservation {
     private int id;
     private String idClient;
-    private int nbpassagers;
-    private Timestamp dateheure;
-    private int idHotel;
-    private String hotelNom;
+    private int nombrePassagers;
+    private Timestamp dateHeureDepart;
+    private int idLieuDestination;
+    
+    // Champs pour affichage
+    private String lieuDestination;
+    private String lieuDepart;
 
     public Reservation() {
     }
 
-    public Reservation(int id, String idClient, int nbpassagers, Timestamp dateheure, int idHotel, String hotelNom) {
+    public Reservation(int id, String idClient, int nombrePassagers, 
+                       Timestamp dateHeureDepart, int idLieuDestination) {
         this.id = id;
         this.idClient = idClient;
-        this.nbpassagers = nbpassagers;
-        this.dateheure = dateheure;
-        this.idHotel = idHotel;
-        this.hotelNom = hotelNom;
+        this.nombrePassagers = nombrePassagers;
+        this.dateHeureDepart = dateHeureDepart;
+        this.idLieuDestination = idLieuDestination;
     }
 
     public int getId() {
@@ -38,35 +42,47 @@ public class Reservation {
         this.idClient = idClient;
     }
 
-    public int getNbpassagers() {
-        return nbpassagers;
+    public int getNombrePassagers() {
+        return nombrePassagers;
     }
 
-    public void setNbpassagers(int nbpassagers) {
-        this.nbpassagers = nbpassagers;
+    public void setNombrePassagers(int nombrePassagers) {
+        this.nombrePassagers = nombrePassagers;
     }
 
-    public Timestamp getDateheure() {
-        return dateheure;
+    public Timestamp getDateHeureDepart() {
+        return dateHeureDepart;
     }
 
-    public void setDateheure(Timestamp dateheure) {
-        this.dateheure = dateheure;
+    public void setDateHeureDepart(Timestamp dateHeureDepart) {
+        this.dateHeureDepart = dateHeureDepart;
     }
 
-    public int getIdHotel() {
-        return idHotel;
+    public int getIdLieuDestination() {
+        return idLieuDestination;
     }
 
-    public void setIdHotel(int idHotel) {
-        this.idHotel = idHotel;
+    public void setIdLieuDestination(int idLieuDestination) {
+        this.idLieuDestination = idLieuDestination;
     }
 
-    public String getHotelNom() {
-        return hotelNom;
+    public String getLieuDestination() {
+        return lieuDestination;
     }
 
-    public void setHotelNom(String hotelNom) {
-        this.hotelNom = hotelNom;
+    public void setLieuDestination(String lieuDestination) {
+        this.lieuDestination = lieuDestination;
+    }
+
+    public String getLieuDepart() {
+        return lieuDepart;
+    }
+
+    public void setLieuDepart(String lieuDepart) {
+        this.lieuDepart = lieuDepart;
+    }
+
+    public Date getDateReservation() {
+        return dateHeureDepart != null ? new Date(dateHeureDepart.getTime()) : null;
     }
 }
