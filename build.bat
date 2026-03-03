@@ -3,7 +3,7 @@ setlocal
 
 REM ====== CONFIGURATION ======
 set APP_NAME=reservation
-set TOMCAT_WEBAPPS=C:\xampp\tomcat_2\webapps
+set TOMCAT_WEBAPPS=C:\Users\miojo\Documents\apache-tomcat-10.1.28\webapps
 set SRC_DIR=src
 set WEBAPP_DIR=webapp
 set LIB_DIR=lib
@@ -55,6 +55,10 @@ if exist "%TOMCAT_WEBAPPS%" (
 )
 
 echo.
+echo ==== Generation du Token API ====
+java -cp "%BUILD_DIR%\WEB-INF\classes" security.TokenService
+echo.
+
 echo ==== Terminé ====
 echo Pour accéder à l'application:
 echo   - Formulaire: http://localhost:8383/%APP_NAME%/reservations/new
