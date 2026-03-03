@@ -11,16 +11,21 @@ import myframework.annotation.MyMapping;
 import myframework.annotation.POST;
 import myframework.annotation.RequestParam;
 import myframework.fw.ModelView;
+import security.TokenService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @MyController
 public class ReservationController {
     private final HotelDao hotelDao = new HotelDao();
     private final ReservationDao reservationDao = new ReservationDao();
+    private final TokenService tokenService = TokenService.getInstance();
     private final DateTimeFormatter inputFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
     @MyMapping("/")
@@ -79,7 +84,59 @@ public class ReservationController {
     @MyMapping("/api/reservations")
     @GET
     @Json
-    public List<Reservation> listReservations() throws Exception {
-        return reservationDao.findAll();
+    public Object listReservations(HttpServletRequest request) throws Exception {
+        // Vérifie le token d'authentification depuis le header Authorization
+        String authHeader = request.getHeader("Authorization");
+        
+        if (authHeader == null || authHeader.isEmpty()) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("data", null);
+            error.put("status", "error");
+            error.put("code", 401);
+            error.put("count", 0);
+            error.put("message", "Token manquant. Header 'Authorization: Bearer <token>' requis.");
+            return error;
+        }
+        
+        // Vérifie le format "Bearer <token>"
+        if (!authHeader.startsWith("Bearer ")) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("data", null);
+            error.put("status", "error");
+            error.put("code", 401);
+            error.put("count", 0);
+            error.put("message", "Format invalide. Utilisez 'Authorization: Bearer <token>'.");
+            return error;
+        }
+        
+        String token = authHeader.substring(7); // Enlève "Bearer "
+        
+        if (!tokenService.validateToken(token)) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("data", null);
+            error.put("status", "error");
+            error.put("code", 401);
+            error.put("count", 0);
+            error.put("message", "Token invalide ou expire.");
+            return error;
+        }
+        
+        try {
+            List<Reservation> reservations = reservationDao.findAll();
+            Map<String, Object> result = new HashMap<>();
+            result.put("data", reservations);
+            result.put("status", "success");
+            result.put("code", 200);
+            result.put("count", reservations.size());
+            return result;
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("data", null);
+            error.put("status", "error");
+            error.put("code", 500);
+            error.put("count", 0);
+            error.put("message", e.getMessage());
+            return error;
+        }
     }
 }

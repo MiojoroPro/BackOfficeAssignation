@@ -55,6 +55,10 @@ if exist "%TOMCAT_WEBAPPS%" (
 )
 
 echo.
+echo ==== Generation du Token API ====
+java -cp "%BUILD_DIR%\WEB-INF\classes" security.TokenService
+echo.
+
 echo ==== Terminé ====
 echo Pour accéder à l'application:
 echo   - Formulaire: http://localhost:8383/%APP_NAME%/reservations/new
