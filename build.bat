@@ -3,14 +3,14 @@ setlocal
 
 REM ====== CONFIGURATION ======
 set APP_NAME=reservation
-set TOMCAT_WEBAPPS=E:\apache-tomcat-10.1.28\webapps
+set TOMCAT_WEBAPPS=C:\xampp\tomcat_2\webapps
 set SRC_DIR=src
 set WEBAPP_DIR=webapp
 set LIB_DIR=lib
 set BUILD_DIR=build
 
 REM ====== Java 21 (requis pour myframework.jar) ======
-set JAVA_HOME=C:\Windows\jdk-21.0.4\jdk-21.0.4
+set JAVA_HOME=C:\Program Files\Java\jdk-21
 set PATH=%JAVA_HOME%\bin;%PATH%
 
 REM ====== Dépendances ======
