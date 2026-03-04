@@ -313,7 +313,7 @@
         
         <!-- Footer -->
         <div class="footer-actions">
-            <a href="affectation/affecter?date=${dateRecherche}" 
+            <a href="affecter?date=${dateRecherche}" 
                class="btn btn-primary"
                onclick="return confirm('Relancer l\'affectation automatique ?')">
                 Relancer l'affectation
