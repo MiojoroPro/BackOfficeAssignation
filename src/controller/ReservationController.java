@@ -1,8 +1,8 @@
 package controller;
 
-import dao.HotelDao;
+import dao.LieuDao;
 import dao.ReservationDao;
-import model.Hotel;
+import model.Lieu;
 import model.Reservation;
 import myframework.annotation.GET;
 import myframework.annotation.Json;
@@ -23,7 +23,7 @@ import java.util.Map;
 
 @MyController
 public class ReservationController {
-    private final HotelDao hotelDao = new HotelDao();
+    private final LieuDao lieuDao = new LieuDao();
     private final ReservationDao reservationDao = new ReservationDao();
     private final TokenService tokenService = TokenService.getInstance();
     private final DateTimeFormatter inputFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
@@ -38,7 +38,7 @@ public class ReservationController {
     @GET
     public ModelView showForm() throws Exception {
         ModelView mv = new ModelView("views/reservation-form.jsp");
-        List<Hotel> hotels = hotelDao.findAll();
+        List<Lieu> hotels = lieuDao.findHotels();
         mv.addAttribute("hotels", hotels);
         return mv;
     }
@@ -49,10 +49,10 @@ public class ReservationController {
         @RequestParam(value = "idClient", required = true) String idClient,
         @RequestParam(value = "nbpassagers", required = true) int nbpassagers,
         @RequestParam(value = "dateheure", required = true) String dateheure,
-        @RequestParam(value = "idHotel", required = true) int idHotel
+        @RequestParam(value = "idLieu", required = true) int idLieu
     ) throws Exception {
         ModelView mv = new ModelView("views/reservation-form.jsp");
-        List<Hotel> hotels = hotelDao.findAll();
+        List<Lieu> hotels = lieuDao.findHotels();
         mv.addAttribute("hotels", hotels);
 
         if (!idClient.matches("^[A-Za-z0-9]{4}$")) {
@@ -74,7 +74,7 @@ public class ReservationController {
             return mv;
         }
 
-        reservationDao.insert(idClient, nbpassagers, ts, idHotel);
+        reservationDao.insert(idClient, nbpassagers, ts, idLieu);
 
         ModelView success = new ModelView("views/reservation-success.jsp");
         success.addAttribute("message", "Réservation enregistrée avec succès.");
