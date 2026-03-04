@@ -71,6 +71,7 @@ CREATE TABLE affectation (
     id_reservation INT NOT NULL,
     date_heure_depart TIMESTAMP NOT NULL, -- Heure de départ effective
     date_heure_retour TIMESTAMP NOT NULL, -- Heure de retour calculée
+    ordre_livraison INT NOT NULL DEFAULT 1, -- Ordre de livraison (1 = premier arrêt, 2 = deuxième, etc.)
     FOREIGN KEY (id_vehicule) REFERENCES vehicule(id),
     FOREIGN KEY (id_reservation) REFERENCES reservation(id),
     UNIQUE (id_reservation) -- Une réservation ne peut avoir qu'une affectation
@@ -140,7 +141,13 @@ INSERT INTO vehicule (immatriculation, capacite, carburant) VALUES
 -- 8 passagers → véhicules dispo: 11(D), 11(D), 11(E), 18(D)
 -- Attendu: choisir parmi les 11 places Diesel (random entre 1111 TAA et 2222 TAB)
 INSERT INTO reservation (id_client, nombre_passagers, date_heure_depart, id_lieu_destination) VALUES
-('CLI001', 8, '2026-03-03 08:00:00', 2);  -- 8 passagers vers Hôtel Ibis
+('CLI001', 8, '2026-03-03 08:00:00', 2),  -- 8 passagers vers Hôtel Ibis
+-- Même vol (même heure) avec destinations différentes pour tester le regroupement
+('CLI002', 5, '2026-03-04 20:15:00', 2),  -- 5 passagers vers Hôtel Ibis
+('CLI003', 3, '2026-03-04 20:15:00', 3),  -- 3 passagers vers Hôtel Carlton (même vol)
+('CLI004', 4, '2026-03-04 20:15:00', 4),  -- 4 passagers vers Hôtel Colbert (même vol)
+('CLI005', 6, '2026-03-04 08:00:00', 5),  -- 6 passagers vers Hôtel du Louvre
+('CLI006', 2, '2026-03-04 08:00:00', 6);  -- 2 passagers vers Hôtel Panorama (même vol)
 
 -- =============================================
 -- VUE: Liste des réservations avec détails
@@ -176,7 +183,8 @@ SELECT
     aer.libelle as lieu_depart,
     l.libelle as lieu_arrivee,
     a.date_heure_depart,
-    a.date_heure_retour
+    a.date_heure_retour,
+    a.ordre_livraison
 FROM affectation a
 JOIN vehicule v ON a.id_vehicule = v.id
 JOIN reservation r ON a.id_reservation = r.id

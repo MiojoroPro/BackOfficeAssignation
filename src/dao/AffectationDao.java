@@ -12,14 +12,15 @@ public class AffectationDao {
     /**
      * Insère une nouvelle affectation
      */
-    public void insert(int idVehicule, int idReservation, Timestamp dateHeureDepart, Timestamp dateHeureRetour) throws SQLException {
-        String sql = "INSERT INTO affectation (id_vehicule, id_reservation, date_heure_depart, date_heure_retour) VALUES (?, ?, ?, ?)";
+    public void insert(int idVehicule, int idReservation, Timestamp dateHeureDepart, Timestamp dateHeureRetour, int ordreLivraison) throws SQLException {
+        String sql = "INSERT INTO affectation (id_vehicule, id_reservation, date_heure_depart, date_heure_retour, ordre_livraison) VALUES (?, ?, ?, ?, ?)";
         try (Connection conn = DbConfig.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idVehicule);
             ps.setInt(2, idReservation);
             ps.setTimestamp(3, dateHeureDepart);
             ps.setTimestamp(4, dateHeureRetour);
+            ps.setInt(5, ordreLivraison);
             ps.executeUpdate();
         }
     }
@@ -43,13 +44,13 @@ public class AffectationDao {
         String sql = "SELECT a.id as id_affectation, v.id as id_vehicule, v.immatriculation, v.capacite, v.carburant, " +
                      "r.id as id_reservation, r.id_client, r.nombre_passagers, " +
                      "aer.libelle as lieu_depart, l.libelle as lieu_arrivee, " +
-                     "a.date_heure_depart, a.date_heure_retour " +
+                     "a.date_heure_depart, a.date_heure_retour, a.ordre_livraison " +
                      "FROM affectation a " +
                      "JOIN vehicule v ON a.id_vehicule = v.id " +
                      "JOIN reservation r ON a.id_reservation = r.id " +
                      "JOIN lieu l ON r.id_lieu_destination = l.id " +
                      "CROSS JOIN (SELECT libelle FROM lieu WHERE type = 'AEROPORT' LIMIT 1) aer " +
-                     "ORDER BY a.date_heure_depart ASC";
+                     "ORDER BY a.date_heure_depart ASC, a.ordre_livraison ASC";
         
         List<AffectationDetails> list = new ArrayList<>();
         try (Connection conn = DbConfig.getConnection();
@@ -69,14 +70,14 @@ public class AffectationDao {
         String sql = "SELECT a.id as id_affectation, v.id as id_vehicule, v.immatriculation, v.capacite, v.carburant, " +
                      "r.id as id_reservation, r.id_client, r.nombre_passagers, " +
                      "aer.libelle as lieu_depart, l.libelle as lieu_arrivee, " +
-                     "a.date_heure_depart, a.date_heure_retour " +
+                     "a.date_heure_depart, a.date_heure_retour, a.ordre_livraison " +
                      "FROM affectation a " +
                      "JOIN vehicule v ON a.id_vehicule = v.id " +
                      "JOIN reservation r ON a.id_reservation = r.id " +
                      "JOIN lieu l ON r.id_lieu_destination = l.id " +
                      "CROSS JOIN (SELECT libelle FROM lieu WHERE type = 'AEROPORT' LIMIT 1) aer " +
                      "WHERE DATE(a.date_heure_depart) = ? " +
-                     "ORDER BY v.immatriculation, a.date_heure_depart ASC";
+                     "ORDER BY v.immatriculation, a.date_heure_depart ASC, a.ordre_livraison ASC";
         
         List<AffectationDetails> list = new ArrayList<>();
         try (Connection conn = DbConfig.getConnection();
@@ -130,6 +131,7 @@ public class AffectationDao {
         ad.setLieuArrivee(rs.getString("lieu_arrivee"));
         ad.setDateHeureDepart(rs.getTimestamp("date_heure_depart"));
         ad.setDateHeureRetour(rs.getTimestamp("date_heure_retour"));
+        ad.setOrdreLivraison(rs.getInt("ordre_livraison"));
         return ad;
     }
 }

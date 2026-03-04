@@ -18,6 +18,7 @@ public class AffectationDetails {
     private String lieuArrivee;
     private Timestamp dateHeureDepart;
     private Timestamp dateHeureRetour;
+    private int ordreLivraison;
 
     public AffectationDetails() {
     }
@@ -124,5 +125,13 @@ public class AffectationDetails {
 
     public void setDateHeureRetour(Timestamp dateHeureRetour) {
         this.dateHeureRetour = dateHeureRetour;
+    }
+
+    public int getOrdreLivraison() {
+        return ordreLivraison;
+    }
+
+    public void setOrdreLivraison(int ordreLivraison) {
+        this.ordreLivraison = ordreLivraison;
     }
 }

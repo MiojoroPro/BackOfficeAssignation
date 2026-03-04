@@ -243,6 +243,7 @@
                                 <table>
                                     <thead>
                                         <tr>
+                                            <th>Ordre</th>
                                             <th>Client</th>
                                             <th>Passagers</th>
                                             <th>Départ</th>
@@ -254,6 +255,7 @@
                                     <tbody>
                                         <c:forEach var="affectation" items="${entry.value}">
                                             <tr>
+                                                <td><span class="badge badge-success">${affectation.ordreLivraison}</span></td>
                                                 <td><strong>${affectation.idClient}</strong></td>
                                                 <td><span class="passagers">${affectation.nombrePassagers}</span></td>
                                                 <td>${affectation.lieuDepart}</td>
