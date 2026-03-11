@@ -51,12 +51,6 @@
             text-decoration: none;
             display: inline-block;
         }
-        .btn-outline {
-            background: #fff;
-            color: #333;
-            border: 1px solid #d0d0d0;
-        }
-        .btn-outline:hover { background: #f5f5f5; }
         .btn-primary { background: #0066cc; color: #fff; }
         .btn-primary:hover { background: #0052a3; }
         
@@ -84,12 +78,15 @@
         .card-header {
             padding: 16px 20px;
             border-bottom: 1px solid #e0e0e0;
-            background: #fafafa;
+            background: #f0f0f0;
         }
         .card-header h2 {
             font-size: 16px;
             font-weight: 600;
             color: #1a1a1a;
+        }
+        .card-header.warning {
+            background: #f0f0f0;
         }
         .card-body { padding: 0; }
         
@@ -100,7 +97,7 @@
         .vehicule-section:last-child { border-bottom: none; }
         .vehicule-header {
             padding: 16px 20px;
-            background: #f8f9fa;
+            background: #f0f0f0;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -204,7 +201,6 @@
             <div class="header-actions">
                 <span class="badge badge-success">${nbAffectations} affectation(s)</span>
                 <span class="badge badge-warning">${nbNonAffectees} non affectée(s)</span>
-                <a href="affectation" class="btn btn-outline">Retour</a>
             </div>
         </div>
         
@@ -276,7 +272,7 @@
         <!-- Réservations non affectées -->
         <c:if test="${not empty reservationsNonAffectees}">
             <div class="card card-warning">
-                <div class="card-header">
+                <div class="card-header warning">
                     <h2>Réservations sans véhicule</h2>
                 </div>
                 <div class="card-body">
@@ -315,7 +311,7 @@
         
         <!-- Footer -->
         <div class="footer-actions">
-            <a href="affectation/affecter?date=${dateRecherche}" 
+            <a href="affecter?date=${dateRecherche}" 
                class="btn btn-primary"
                onclick="return confirm('Relancer l\'affectation automatique ?')">
                 Relancer l'affectation

@@ -3,7 +3,7 @@ setlocal
 
 REM ====== CONFIGURATION ======
 set APP_NAME=reservation
-set TOMCAT_WEBAPPS=C:\xampp\tomcat_2\webapps
+set TOMCAT_WEBAPPS=E:\apache-tomcat-10.1.28\webapps
 set SRC_DIR=src
 set WEBAPP_DIR=webapp
 set LIB_DIR=lib

@@ -77,23 +77,87 @@ public class AffectationService {
     /**
      * Génère la clé de regroupement "vol" à partir d'un timestamp
      * Même vol = même heure:minute de départ
+     * @deprecated Remplacé par le regroupement par fenêtre de temps d'attente
      */
     private String getVolKey(Timestamp dateHeureDepart) {
         Calendar cal = Calendar.getInstance();
         cal.setTimeInMillis(dateHeureDepart.getTime());
         return String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE));
     }
+    
+    /**
+     * Classe interne pour stocker un groupe de réservations avec son heure de départ effective
+     */
+    private static class GroupeReservations {
+        List<Reservation> reservations;
+        Timestamp heureDepartEffective;
+        
+        GroupeReservations(List<Reservation> reservations, Timestamp heureDepartEffective) {
+            this.reservations = reservations;
+            this.heureDepartEffective = heureDepartEffective;
+        }
+    }
+    
+    /**
+     * Regroupe les réservations par fenêtre de temps d'attente.
+     * 
+     * Algorithme:
+     * 1. Trier les réservations par heure de départ croissant
+     * 2. Prendre la première réservation non groupée
+     * 3. Créer une fenêtre [heure_depart, heure_depart + temps_attente]
+     * 4. Ajouter toutes les réservations dans cette fenêtre au groupe
+     * 5. L'heure de départ effective = première_heure + temps_attente
+     * 6. Répéter pour les réservations restantes
+     */
+    private List<GroupeReservations> regrouperParFenetreTempAttente(List<Reservation> reservations, int tempsAttenteMinutes) {
+        // Trier par heure de départ croissant
+        reservations.sort(Comparator.comparing(Reservation::getDateHeureDepart));
+        
+        List<GroupeReservations> groupes = new ArrayList<>();
+        Set<Integer> assigned = new HashSet<>();
+        
+        for (int i = 0; i < reservations.size(); i++) {
+            if (assigned.contains(i)) continue;
+            
+            Reservation first = reservations.get(i);
+            long windowStart = first.getDateHeureDepart().getTime();
+            long windowEnd = windowStart + tempsAttenteMinutes * 60 * 1000L;
+            
+            List<Reservation> groupe = new ArrayList<>();
+            groupe.add(first);
+            assigned.add(i);
+            
+            // Ajouter les réservations dans la fenêtre de temps
+            for (int j = i + 1; j < reservations.size(); j++) {
+                if (assigned.contains(j)) continue;
+                
+                Reservation r = reservations.get(j);
+                long departTime = r.getDateHeureDepart().getTime();
+                if (departTime <= windowEnd) {
+                    groupe.add(r);
+                    assigned.add(j);
+                }
+            }
+            
+            // Heure de départ effective = première heure + temps d'attente
+            Timestamp heureDepartEffective = new Timestamp(windowEnd);
+            groupes.add(new GroupeReservations(groupe, heureDepartEffective));
+        }
+        
+        return groupes;
+    }
 
     /**
      * Effectue l'affectation des véhicules pour toutes les réservations d'une date.
      * 
      * Algorithme:
-     * 1. Regrouper par vol (même heure:minute)
-     * 2. Pour chaque vol, trier par passagers DESC
+     * 1. Regrouper par fenêtre de temps d'attente (ex: 8h00-8h30 si temps_attente=30min)
+     * 2. Pour chaque groupe, trier par passagers DESC
      * 3. Prendre la plus grosse réservation, chercher un véhicule
-     * 4. Essayer de combiner avec les réservations restantes du même vol
+     * 4. Essayer de combiner avec les réservations restantes du groupe
      * 5. Calculer la route de livraison (plus proche d'abord)
      * 6. Calculer le temps total et l'heure de retour
+     * 7. L'heure de départ effective = première_heure_du_groupe + temps_attente
      */
     public ResultatAffectation affecterVehicules(Date date) throws SQLException {
         ResultatAffectation resultat = new ResultatAffectation();
@@ -116,20 +180,16 @@ public class AffectationService {
         // Récupérer les réservations du jour
         List<Reservation> reservations = reservationDao.findByDate(date);
         
-        // 1. Regrouper par vol (même heure:minute de départ)
-        // TreeMap pour ordre chronologique des vols
-        Map<String, List<Reservation>> groupesVol = new TreeMap<>();
-        for (Reservation r : reservations) {
-            String key = getVolKey(r.getDateHeureDepart());
-            groupesVol.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
-        }
+        // 1. Regrouper par fenêtre de temps d'attente
+        List<GroupeReservations> groupes = regrouperParFenetreTempAttente(reservations, parametre.getTempsAttente());
         
         // Map pour suivre les créneaux occupés par véhicule
         Map<Integer, List<long[]>> vehiculesOccupes = new HashMap<>();
         
-        // 2. Traiter chaque vol dans l'ordre chronologique
-        for (Map.Entry<String, List<Reservation>> entry : groupesVol.entrySet()) {
-            List<Reservation> groupe = entry.getValue();
+        // 2. Traiter chaque groupe dans l'ordre chronologique
+        for (GroupeReservations groupeRes : groupes) {
+            List<Reservation> groupe = groupeRes.reservations;
+            Timestamp heureDepartEffective = groupeRes.heureDepartEffective;
             
             // Trier par nombre de passagers DECROISSANT
             groupe.sort((a, b) -> Integer.compare(b.getNombrePassagers(), a.getNombrePassagers()));
@@ -137,7 +197,52 @@ public class AffectationService {
             // Liste des réservations en attente d'affectation
             List<Reservation> pending = new ArrayList<>(groupe);
             
-            while (!pending.isEmpty()) {
+            // ÉTAPE 1: Essayer d'abord de mettre TOUT le groupe dans un seul véhicule
+            int totalPassagersGroupe = pending.stream().mapToInt(Reservation::getNombrePassagers).sum();
+            List<Vehicule> candidatsTous = shuffleTies(vehiculeDao.findVehiculesCapables(totalPassagersGroupe));
+            
+            boolean groupeCompletAffecte = false;
+            for (Vehicule vehicule : candidatsTous) {
+                // Calculer la route pour tout le groupe
+                List<RouteStop> route = calculerRoute(aeroport.getId(), pending);
+                int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
+                
+                Timestamp departure = heureDepartEffective;
+                Timestamp returnTime = new Timestamp(departure.getTime() + totalMinutes * 60 * 1000L);
+                
+                if (estDisponible(vehicule.getId(), departure.getTime(), returnTime.getTime(), vehiculesOccupes)) {
+                    // Affecter toutes les réservations du groupe à ce véhicule
+                    for (Reservation r : pending) {
+                        int order = getStopOrder(r.getIdLieuDestination(), route);
+                        affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
+                        
+                        AffectationDetails ad = new AffectationDetails();
+                        ad.setIdVehicule(vehicule.getId());
+                        ad.setImmatriculation(vehicule.getImmatriculation());
+                        ad.setCapacite(vehicule.getCapacite());
+                        ad.setCarburant(vehicule.getCarburant());
+                        ad.setIdReservation(r.getId());
+                        ad.setIdClient(r.getIdClient());
+                        ad.setNombrePassagers(r.getNombrePassagers());
+                        ad.setLieuDepart(r.getLieuDepart());
+                        ad.setLieuArrivee(r.getLieuDestination());
+                        ad.setDateHeureDepart(departure);
+                        ad.setDateHeureRetour(returnTime);
+                        ad.setOrdreLivraison(order);
+                        resultat.addAffectation(ad);
+                    }
+                    
+                    vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
+                        .add(new long[]{departure.getTime(), returnTime.getTime()});
+                    
+                    pending.clear();
+                    groupeCompletAffecte = true;
+                    break;
+                }
+            }
+            
+            // ÉTAPE 2: Si pas de véhicule assez grand, diviser le groupe
+            while (!pending.isEmpty() && !groupeCompletAffecte) {
                 Reservation first = pending.remove(0);
                 
                 // Récupérer les véhicules candidats (capacité >= passagers de la première réservation)
@@ -148,7 +253,7 @@ public class AffectationService {
                 
                 // 3. Essayer chaque véhicule candidat
                 for (Vehicule vehicule : candidates) {
-                    // Essayer de combiner des réservations du même vol
+                    // Essayer de combiner des réservations du même groupe (même fenêtre de temps)
                     List<Reservation> combined = new ArrayList<>();
                     combined.add(first);
                     int remainingCapacity = vehicule.getCapacite() - first.getNombrePassagers();
@@ -167,7 +272,8 @@ public class AffectationService {
                     // 5. Calculer le temps total du trajet
                     int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
                     
-                    Timestamp departure = first.getDateHeureDepart();
+                    // L'heure de départ effective = première_heure_du_groupe + temps_attente
+                    Timestamp departure = heureDepartEffective;
                     Timestamp returnTime = new Timestamp(departure.getTime() + totalMinutes * 60 * 1000L);
                     
                     // 6. Vérifier la disponibilité du véhicule pour tout le créneau

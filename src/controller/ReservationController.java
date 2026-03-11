@@ -73,7 +73,7 @@ public class ReservationController {
             mv.addAttribute("error", "Format de date/heure invalide.");
             return mv;
         }
-
+ 
         reservationDao.insert(idClient, nbpassagers, ts, idLieu);
 
         ModelView success = new ModelView("views/reservation-success.jsp");
