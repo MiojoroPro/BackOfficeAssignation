@@ -21,6 +21,7 @@ import java.util.*;
  * Règles de sélection de véhicule:
  * - Capacité >= nombre de passagers de la première réservation
  * - Capacité la plus proche
+ * - Priorité au véhicule ayant le moins de trajets pour la date en cours
  * - Priorité au Diesel
  * - Si égalité parfaite → choix aléatoire
  */
@@ -185,6 +186,8 @@ public class AffectationService {
         
         // Map pour suivre les créneaux occupés par véhicule
         Map<Integer, List<long[]>> vehiculesOccupes = new HashMap<>();
+        // Map pour suivre le nombre de trajets par véhicule pour la date en cours
+        Map<Integer, Integer> trajetsParVehicule = new HashMap<>();
         
         // 2. Traiter chaque groupe dans l'ordre chronologique
         for (GroupeReservations groupeRes : groupes) {
@@ -199,7 +202,10 @@ public class AffectationService {
             
             // ÉTAPE 1: Essayer d'abord de mettre TOUT le groupe dans un seul véhicule
             int totalPassagersGroupe = pending.stream().mapToInt(Reservation::getNombrePassagers).sum();
-            List<Vehicule> candidatsTous = shuffleTies(vehiculeDao.findVehiculesCapables(totalPassagersGroupe));
+            List<Vehicule> candidatsTous = ordonnerVehiculesParPriorite(
+                vehiculeDao.findVehiculesCapables(totalPassagersGroupe),
+                trajetsParVehicule
+            );
             
             boolean groupeCompletAffecte = false;
             for (Vehicule vehicule : candidatsTous) {
@@ -234,6 +240,7 @@ public class AffectationService {
                     
                     vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
                         .add(new long[]{departure.getTime(), returnTime.getTime()});
+                    incrementerTrajets(vehicule.getId(), trajetsParVehicule);
                     
                     pending.clear();
                     groupeCompletAffecte = true;
@@ -247,7 +254,10 @@ public class AffectationService {
                 
                 // Récupérer les véhicules candidats (capacité >= passagers de la première réservation)
                 // Triés par capacité ASC, carburant ASC (D avant E)
-                List<Vehicule> candidates = shuffleTies(vehiculeDao.findVehiculesCapables(first.getNombrePassagers()));
+                List<Vehicule> candidates = ordonnerVehiculesParPriorite(
+                    vehiculeDao.findVehiculesCapables(first.getNombrePassagers()),
+                    trajetsParVehicule
+                );
                 
                 boolean assigned = false;
                 
@@ -308,6 +318,7 @@ public class AffectationService {
                         // Marquer le véhicule comme occupé
                         vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
                             .add(new long[]{departure.getTime(), returnTime.getTime()});
+                        incrementerTrajets(vehicule.getId(), trajetsParVehicule);
                         
                         assigned = true;
                         break;
@@ -422,23 +433,46 @@ public class AffectationService {
      * pour introduire l'aléatoire en cas d'égalité parfaite.
      * L'ordre global est préservé: capacité ASC, Diesel avant Essence.
      */
-    private List<Vehicule> shuffleTies(List<Vehicule> vehicles) {
+    private List<Vehicule> ordonnerVehiculesParPriorite(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule) {
+        vehicles.sort(
+            Comparator
+                .comparingInt(Vehicule::getCapacite)
+                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
+                .thenComparing(Vehicule::getCarburant)
+        );
+        return melangerEgalites(vehicles, trajetsParVehicule);
+    }
+
+    /**
+     * Mélange les véhicules de même priorité (même capacité, mêmes trajets, même carburant)
+     * pour introduire l'aléatoire en cas d'égalité parfaite.
+     */
+    private List<Vehicule> melangerEgalites(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule) {
         List<Vehicule> result = new ArrayList<>();
         int i = 0;
         while (i < vehicles.size()) {
             int j = i;
+            int capacite = vehicles.get(i).getCapacite();
+            int trajets = trajetsParVehicule.getOrDefault(vehicles.get(i).getId(), 0);
+            char carburant = vehicles.get(i).getCarburant();
+
             while (j < vehicles.size()
-                    && vehicles.get(j).getCapacite() == vehicles.get(i).getCapacite()
-                    && vehicles.get(j).getCarburant() == vehicles.get(i).getCarburant()) {
+                    && vehicles.get(j).getCapacite() == capacite
+                    && trajetsParVehicule.getOrDefault(vehicles.get(j).getId(), 0) == trajets
+                    && vehicles.get(j).getCarburant() == carburant) {
                 j++;
             }
-            // Mélanger le sous-groupe [i, j) qui a même capacité et même carburant
+
             List<Vehicule> group = new ArrayList<>(vehicles.subList(i, j));
             Collections.shuffle(group, random);
             result.addAll(group);
             i = j;
         }
         return result;
+    }
+
+    private void incrementerTrajets(int vehiculeId, Map<Integer, Integer> trajetsParVehicule) {
+        trajetsParVehicule.put(vehiculeId, trajetsParVehicule.getOrDefault(vehiculeId, 0) + 1);
     }
 
     /**
