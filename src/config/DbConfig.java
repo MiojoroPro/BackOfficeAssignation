@@ -6,7 +6,7 @@ import java.sql.SQLException;
 
 public class DbConfig {
     // TODO: adapter ces valeurs à votre base
-    public static final String URL = "jdbc:postgresql://localhost:5432/assignation";
+    public static final String URL = "jdbc:postgresql://localhost:5432/operateur";
     public static final String USER = "postgres";
     public static final String PASSWORD = "postgres";
 

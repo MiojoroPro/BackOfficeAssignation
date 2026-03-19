@@ -61,6 +61,110 @@ public class AffectationService {
     }
 
     /**
+     * Vue métier d'un voyage d'un véhicule (un créneau départ/retour).
+     * Plusieurs réservations peuvent appartenir au même voyage.
+     */
+    public static class VoyageAffectation {
+        private int idVehicule;
+        private String immatriculation;
+        private int capacite;
+        private char carburant;
+        private Timestamp dateHeureDepart;
+        private Timestamp dateHeureRetour;
+        private int totalPassagers;
+        private final List<AffectationDetails> reservations = new ArrayList<>();
+
+        public int getIdVehicule() {
+            return idVehicule;
+        }
+
+        public void setIdVehicule(int idVehicule) {
+            this.idVehicule = idVehicule;
+        }
+
+        public String getImmatriculation() {
+            return immatriculation;
+        }
+
+        public void setImmatriculation(String immatriculation) {
+            this.immatriculation = immatriculation;
+        }
+
+        public int getCapacite() {
+            return capacite;
+        }
+
+        public void setCapacite(int capacite) {
+            this.capacite = capacite;
+        }
+
+        public char getCarburant() {
+            return carburant;
+        }
+
+        public void setCarburant(char carburant) {
+            this.carburant = carburant;
+        }
+
+        public Timestamp getDateHeureDepart() {
+            return dateHeureDepart;
+        }
+
+        public void setDateHeureDepart(Timestamp dateHeureDepart) {
+            this.dateHeureDepart = dateHeureDepart;
+        }
+
+        public Timestamp getDateHeureRetour() {
+            return dateHeureRetour;
+        }
+
+        public void setDateHeureRetour(Timestamp dateHeureRetour) {
+            this.dateHeureRetour = dateHeureRetour;
+        }
+
+        public int getTotalPassagers() {
+            return totalPassagers;
+        }
+
+        public void addPassagers(int passagers) {
+            this.totalPassagers += passagers;
+        }
+
+        public List<AffectationDetails> getReservations() {
+            return reservations;
+        }
+
+        public int getNombreReservations() {
+            return reservations.size();
+        }
+
+        public String getCarburantLibelle() {
+            return carburant == 'D' ? "Diesel" : "Essence";
+        }
+
+        public boolean isDiesel() {
+            return carburant == 'D';
+        }
+
+        public String getTrajetLibelle() {
+            if (reservations.isEmpty()) {
+                return "";
+            }
+
+            Map<Integer, String> arrets = new TreeMap<>();
+            for (AffectationDetails ad : reservations) {
+                arrets.putIfAbsent(ad.getOrdreLivraison(), ad.getLieuArrivee());
+            }
+
+            StringBuilder sb = new StringBuilder(reservations.get(0).getLieuDepart());
+            for (String destination : arrets.values()) {
+                sb.append(" -> ").append(destination);
+            }
+            return sb.toString();
+        }
+    }
+
+    /**
      * Représente un arrêt dans la route de livraison
      */
     private static class RouteStop {
@@ -107,7 +211,7 @@ public class AffectationService {
      * 2. Prendre la première réservation non groupée
      * 3. Créer une fenêtre [heure_depart, heure_depart + temps_attente]
      * 4. Ajouter toutes les réservations dans cette fenêtre au groupe
-     * 5. L'heure de départ effective = première_heure + temps_attente
+     * 5. L'heure de départ de base = heure de la dernière réservation du groupe
      * 6. Répéter pour les réservations restantes
      */
     private List<GroupeReservations> regrouperParFenetreTempAttente(List<Reservation> reservations, int tempsAttenteMinutes) {
@@ -127,6 +231,7 @@ public class AffectationService {
             List<Reservation> groupe = new ArrayList<>();
             groupe.add(first);
             assigned.add(i);
+            long derniereHeureGroupe = first.getDateHeureDepart().getTime();
             
             // Ajouter les réservations dans la fenêtre de temps
             for (int j = i + 1; j < reservations.size(); j++) {
@@ -137,11 +242,14 @@ public class AffectationService {
                 if (departTime <= windowEnd) {
                     groupe.add(r);
                     assigned.add(j);
+                    if (departTime > derniereHeureGroupe) {
+                        derniereHeureGroupe = departTime;
+                    }
                 }
             }
             
-            // Heure de départ effective = première heure + temps d'attente
-            Timestamp heureDepartEffective = new Timestamp(windowEnd);
+            // Heure de départ de base = heure de la dernière réservation du groupe
+            Timestamp heureDepartEffective = new Timestamp(derniereHeureGroupe);
             groupes.add(new GroupeReservations(groupe, heureDepartEffective));
         }
         
@@ -158,7 +266,7 @@ public class AffectationService {
      * 4. Essayer de combiner avec les réservations restantes du groupe
      * 5. Calculer la route de livraison (plus proche d'abord)
      * 6. Calculer le temps total et l'heure de retour
-     * 7. L'heure de départ effective = première_heure_du_groupe + temps_attente
+    * 7. L'heure de départ effective = max(dernière réservation du groupe, disponibilité véhicule)
      */
     public ResultatAffectation affecterVehicules(Date date) throws SQLException {
         ResultatAffectation resultat = new ResultatAffectation();
@@ -212,40 +320,46 @@ public class AffectationService {
                 // Calculer la route pour tout le groupe
                 List<RouteStop> route = calculerRoute(aeroport.getId(), pending);
                 int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
-                
-                Timestamp departure = heureDepartEffective;
-                Timestamp returnTime = new Timestamp(departure.getTime() + totalMinutes * 60 * 1000L);
-                
-                if (estDisponible(vehicule.getId(), departure.getTime(), returnTime.getTime(), vehiculesOccupes)) {
-                    // Affecter toutes les réservations du groupe à ce véhicule
-                    for (Reservation r : pending) {
-                        int order = getStopOrder(r.getIdLieuDestination(), route);
-                        affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
-                        
-                        AffectationDetails ad = new AffectationDetails();
-                        ad.setIdVehicule(vehicule.getId());
-                        ad.setImmatriculation(vehicule.getImmatriculation());
-                        ad.setCapacite(vehicule.getCapacite());
-                        ad.setCarburant(vehicule.getCarburant());
-                        ad.setIdReservation(r.getId());
-                        ad.setIdClient(r.getIdClient());
-                        ad.setNombrePassagers(r.getNombrePassagers());
-                        ad.setLieuDepart(r.getLieuDepart());
-                        ad.setLieuArrivee(r.getLieuDestination());
-                        ad.setDateHeureDepart(departure);
-                        ad.setDateHeureRetour(returnTime);
-                        ad.setOrdreLivraison(order);
-                        resultat.addAffectation(ad);
-                    }
-                    
-                    vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
-                        .add(new long[]{departure.getTime(), returnTime.getTime()});
-                    incrementerTrajets(vehicule.getId(), trajetsParVehicule);
-                    
-                    pending.clear();
-                    groupeCompletAffecte = true;
-                    break;
+
+                long dureeMs = totalMinutes * 60 * 1000L;
+                long departMs = trouverPremierDepartDisponible(
+                    vehicule.getId(),
+                    heureDepartEffective.getTime(),
+                    dureeMs,
+                    vehiculesOccupes
+                );
+
+                Timestamp departure = new Timestamp(departMs);
+                Timestamp returnTime = new Timestamp(departMs + dureeMs);
+
+                // Affecter toutes les réservations du groupe à ce véhicule
+                for (Reservation r : pending) {
+                    int order = getStopOrder(r.getIdLieuDestination(), route);
+                    affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
+
+                    AffectationDetails ad = new AffectationDetails();
+                    ad.setIdVehicule(vehicule.getId());
+                    ad.setImmatriculation(vehicule.getImmatriculation());
+                    ad.setCapacite(vehicule.getCapacite());
+                    ad.setCarburant(vehicule.getCarburant());
+                    ad.setIdReservation(r.getId());
+                    ad.setIdClient(r.getIdClient());
+                    ad.setNombrePassagers(r.getNombrePassagers());
+                    ad.setLieuDepart(r.getLieuDepart());
+                    ad.setLieuArrivee(r.getLieuDestination());
+                    ad.setDateHeureDepart(departure);
+                    ad.setDateHeureRetour(returnTime);
+                    ad.setOrdreLivraison(order);
+                    resultat.addAffectation(ad);
                 }
+
+                vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
+                    .add(new long[]{departure.getTime(), returnTime.getTime()});
+                incrementerTrajets(vehicule.getId(), trajetsParVehicule);
+
+                pending.clear();
+                groupeCompletAffecte = true;
+                break;
             }
             
             // ÉTAPE 2: Si pas de véhicule assez grand, diviser le groupe
@@ -281,48 +395,52 @@ public class AffectationService {
                     
                     // 5. Calculer le temps total du trajet
                     int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
-                    
-                    // L'heure de départ effective = première_heure_du_groupe + temps_attente
-                    Timestamp departure = heureDepartEffective;
-                    Timestamp returnTime = new Timestamp(departure.getTime() + totalMinutes * 60 * 1000L);
-                    
-                    // 6. Vérifier la disponibilité du véhicule pour tout le créneau
-                    if (estDisponible(vehicule.getId(), departure.getTime(), returnTime.getTime(), vehiculesOccupes)) {
-                        // Affecter toutes les réservations combinées à ce véhicule
-                        for (Reservation r : combined) {
-                            int order = getStopOrder(r.getIdLieuDestination(), route);
-                            affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
-                            
-                            // Construire l'objet de détails pour le résultat
-                            AffectationDetails ad = new AffectationDetails();
-                            ad.setIdVehicule(vehicule.getId());
-                            ad.setImmatriculation(vehicule.getImmatriculation());
-                            ad.setCapacite(vehicule.getCapacite());
-                            ad.setCarburant(vehicule.getCarburant());
-                            ad.setIdReservation(r.getId());
-                            ad.setIdClient(r.getIdClient());
-                            ad.setNombrePassagers(r.getNombrePassagers());
-                            ad.setLieuDepart(r.getLieuDepart());
-                            ad.setLieuArrivee(r.getLieuDestination());
-                            ad.setDateHeureDepart(departure);
-                            ad.setDateHeureRetour(returnTime);
-                            ad.setOrdreLivraison(order);
-                            resultat.addAffectation(ad);
-                        }
-                        
-                        // Retirer les réservations combinées (sauf first déjà retiré) de pending
-                        for (int i = 1; i < combined.size(); i++) {
-                            pending.remove(combined.get(i));
-                        }
-                        
-                        // Marquer le véhicule comme occupé
-                        vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
-                            .add(new long[]{departure.getTime(), returnTime.getTime()});
-                        incrementerTrajets(vehicule.getId(), trajetsParVehicule);
-                        
-                        assigned = true;
-                        break;
+
+                    long dureeMs = totalMinutes * 60 * 1000L;
+                    long departMs = trouverPremierDepartDisponible(
+                        vehicule.getId(),
+                        heureDepartEffective.getTime(),
+                        dureeMs,
+                        vehiculesOccupes
+                    );
+
+                    Timestamp departure = new Timestamp(departMs);
+                    Timestamp returnTime = new Timestamp(departMs + dureeMs);
+
+                    // Affecter toutes les réservations combinées à ce véhicule
+                    for (Reservation r : combined) {
+                        int order = getStopOrder(r.getIdLieuDestination(), route);
+                        affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
+
+                        // Construire l'objet de détails pour le résultat
+                        AffectationDetails ad = new AffectationDetails();
+                        ad.setIdVehicule(vehicule.getId());
+                        ad.setImmatriculation(vehicule.getImmatriculation());
+                        ad.setCapacite(vehicule.getCapacite());
+                        ad.setCarburant(vehicule.getCarburant());
+                        ad.setIdReservation(r.getId());
+                        ad.setIdClient(r.getIdClient());
+                        ad.setNombrePassagers(r.getNombrePassagers());
+                        ad.setLieuDepart(r.getLieuDepart());
+                        ad.setLieuArrivee(r.getLieuDestination());
+                        ad.setDateHeureDepart(departure);
+                        ad.setDateHeureRetour(returnTime);
+                        ad.setOrdreLivraison(order);
+                        resultat.addAffectation(ad);
                     }
+
+                    // Retirer les réservations combinées (sauf first déjà retiré) de pending
+                    for (int i = 1; i < combined.size(); i++) {
+                        pending.remove(combined.get(i));
+                    }
+
+                    // Marquer le véhicule comme occupé
+                    vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
+                        .add(new long[]{departure.getTime(), returnTime.getTime()});
+                    incrementerTrajets(vehicule.getId(), trajetsParVehicule);
+
+                    assigned = true;
+                    break;
                 }
                 
                 if (!assigned) {
@@ -388,11 +506,13 @@ public class AffectationService {
     /**
      * Calcule le temps total du trajet en minutes.
      * 
-     * Itinéraire: Aéroport → Arrêt1 (+ attente) → Arrêt2 (+ attente) → ... → Aéroport
+     * Itinéraire: Aéroport → Arrêt1 → Arrêt2 → ... → Aéroport
+     * Le temps d'attente paramètre est utilisé uniquement pour le regroupement des réservations,
+     * pas comme temps d'arrêt de livraison.
      * 
      * @param aeroportId ID de l'aéroport
      * @param route Liste ordonnée des arrêts
-     * @param parametre Paramètres (vitesse moyenne, temps d'attente)
+     * @param parametre Paramètres (vitesse moyenne)
      * @return Temps total en minutes
      */
     private int calculerTempsRoute(int aeroportId, List<RouteStop> route, Parametre parametre) throws SQLException {
@@ -405,7 +525,6 @@ public class AffectationService {
         for (RouteStop stop : route) {
             double distKm = distanceDao.getDistanceKm(currentId, stop.lieuId);
             totalMinutes += Math.ceil((distKm / parametre.getVitesseMoyenne()) * 60);
-            totalMinutes += parametre.getTempsAttente(); // Temps de dépose à chaque arrêt
             currentId = stop.lieuId;
         }
         
@@ -476,6 +595,40 @@ public class AffectationService {
     }
 
     /**
+     * Retourne la première heure de départ >= departSouhaite qui ne chevauche aucun créneau.
+     */
+    private long trouverPremierDepartDisponible(
+        int vehiculeId,
+        long departSouhaite,
+        long dureeTrajetMs,
+        Map<Integer, List<long[]>> vehiculesOccupes
+    ) {
+        List<long[]> creneaux = vehiculesOccupes.get(vehiculeId);
+        if (creneaux == null || creneaux.isEmpty()) {
+            return departSouhaite;
+        }
+
+        List<long[]> tries = new ArrayList<>(creneaux);
+        tries.sort(Comparator.comparingLong(c -> c[0]));
+
+        long depart = departSouhaite;
+        boolean collision;
+        do {
+            collision = false;
+            long fin = depart + dureeTrajetMs;
+            for (long[] creneau : tries) {
+                if (depart < creneau[1] && fin > creneau[0]) {
+                    depart = creneau[1];
+                    collision = true;
+                    break;
+                }
+            }
+        } while (collision);
+
+        return depart;
+    }
+
+    /**
      * Vérifie si un véhicule est disponible pendant un créneau
      */
     private boolean estDisponible(int vehiculeId, long debut, long fin, Map<Integer, List<long[]>> vehiculesOccupes) {
@@ -516,6 +669,53 @@ public class AffectationService {
             String key = ad.getImmatriculation();
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(ad);
         }
+        return grouped;
+    }
+
+    /**
+     * Groupe les affectations par véhicule puis par voyage.
+     * Un voyage correspond à un même créneau départ/retour pour un véhicule.
+     */
+    public Map<String, List<VoyageAffectation>> groupByVehiculeEtVoyage(List<AffectationDetails> affectations) {
+        Map<String, Map<String, VoyageAffectation>> temp = new LinkedHashMap<>();
+
+        for (AffectationDetails ad : affectations) {
+            String vehiculeKey = ad.getImmatriculation();
+            String voyageKey = ad.getDateHeureDepart().getTime() + "_" + ad.getDateHeureRetour().getTime();
+
+            Map<String, VoyageAffectation> voyages = temp.computeIfAbsent(vehiculeKey, k -> new LinkedHashMap<>());
+
+            VoyageAffectation voyage = voyages.computeIfAbsent(voyageKey, k -> {
+                VoyageAffectation v = new VoyageAffectation();
+                v.setIdVehicule(ad.getIdVehicule());
+                v.setImmatriculation(ad.getImmatriculation());
+                v.setCapacite(ad.getCapacite());
+                v.setCarburant(ad.getCarburant());
+                v.setDateHeureDepart(ad.getDateHeureDepart());
+                v.setDateHeureRetour(ad.getDateHeureRetour());
+                return v;
+            });
+
+            voyage.getReservations().add(ad);
+            voyage.addPassagers(ad.getNombrePassagers());
+        }
+
+        Map<String, List<VoyageAffectation>> grouped = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, VoyageAffectation>> entry : temp.entrySet()) {
+            List<VoyageAffectation> voyages = new ArrayList<>(entry.getValue().values());
+            voyages.sort(Comparator.comparing(VoyageAffectation::getDateHeureDepart));
+
+            for (VoyageAffectation voyage : voyages) {
+                voyage.getReservations().sort(
+                    Comparator
+                        .comparingInt(AffectationDetails::getOrdreLivraison)
+                        .thenComparingInt(AffectationDetails::getIdReservation)
+                );
+            }
+
+            grouped.put(entry.getKey(), voyages);
+        }
+
         return grouped;
     }
 }
