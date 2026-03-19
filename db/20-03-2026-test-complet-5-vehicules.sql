@@ -45,7 +45,8 @@ CREATE TABLE vehicule (
     id SERIAL PRIMARY KEY,
     immatriculation VARCHAR(20) NOT NULL UNIQUE,
     capacite INT NOT NULL,
-    carburant CHAR(1) NOT NULL CHECK (carburant IN ('D', 'E'))
+    carburant CHAR(1) NOT NULL CHECK (carburant IN ('D', 'E')),
+    heure_disponibilite TIME NOT NULL DEFAULT '00:00:00'
 );
 
 CREATE TABLE reservation (
@@ -113,6 +114,9 @@ INSERT INTO vehicule (immatriculation, capacite, carburant) VALUES
 ('V3-DIESEL-6',   6,  'D'),
 ('V4-ESSENCE-8',  8,  'E'),
 ('V5-DIESEL-12', 12,  'D');
+
+-- Exemple disponibilité spécifique: V4 seulement à partir de 06:00
+UPDATE vehicule SET heure_disponibilite = '06:00:00' WHERE immatriculation = 'V4-ESSENCE-8';
 
 -- -----------------------------
 -- Reservations (cas multiples)

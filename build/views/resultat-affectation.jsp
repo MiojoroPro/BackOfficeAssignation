@@ -210,10 +210,10 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <div>
-                <h1>3329</h1>
-                <h1>3343</h1>
-                <h1>3289</h1>
+            <div style="display: flex; gap: 40px; justify-content: center; align-items: center;">
+                <h1 style="font-size: 64px; font-weight: bold; color: #1a1a1a;">3329</h1>
+                <h1 style="font-size: 64px; font-weight: bold; color: #1a1a1a;">3343</h1>
+                <h1 style="font-size: 64px; font-weight: bold; color: #1a1a1a;">3289</h1>
             </div>
             <h1>Affectations du ${dateRecherche}</h1>
             <div class="header-actions">

@@ -210,6 +210,19 @@ public class AffectationService {
     }
 
     /**
+     * Portion d'une réservation embarquée dans un véhicule pendant un voyage.
+     */
+    private static class ReservationPortion {
+        Reservation reservation;
+        int passagersAffectes;
+
+        ReservationPortion(Reservation reservation, int passagersAffectes) {
+            this.reservation = reservation;
+            this.passagersAffectes = passagersAffectes;
+        }
+    }
+
+    /**
      * Génère la clé de regroupement "vol" à partir d'un timestamp
      * Même vol = même heure:minute de départ
      * @deprecated Remplacé par le regroupement par fenêtre de temps d'attente
@@ -321,6 +334,12 @@ public class AffectationService {
         
         // 1. Regrouper par fenêtre de temps d'attente
         List<GroupeReservations> groupes = regrouperParFenetreTempAttente(reservations, parametre.getTempsAttente());
+
+        // Référentiel des véhicules (utile pour l'heure de disponibilité journalière)
+        Map<Integer, Vehicule> vehiculesParId = new HashMap<>();
+        for (Vehicule vehicule : vehiculeDao.findAll()) {
+            vehiculesParId.put(vehicule.getId(), vehicule);
+        }
         
         // Map pour suivre les créneaux occupés par véhicule
         Map<Integer, List<long[]>> vehiculesOccupes = new HashMap<>();
@@ -349,6 +368,8 @@ public class AffectationService {
 
             // Traitement réservation par réservation (avec découpage si nécessaire)
             while (!pending.isEmpty()) {
+                // Toujours reprendre la plus grosse demande restante
+                pending.sort((a, b) -> Integer.compare(b.getNombrePassagers(), a.getNombrePassagers()));
                 Reservation first = pending.remove(0);
 
                 // Aucun véhicule ne peut prendre la réservation en un seul trajet: tenter le découpage.
@@ -362,7 +383,8 @@ public class AffectationService {
                         aeroport.getId(),
                         parametre,
                         vehiculesOccupes,
-                        trajetsParVehicule
+                        trajetsParVehicule,
+                        vehiculesParId
                     );
 
                     if (plan != null) {
@@ -392,28 +414,23 @@ public class AffectationService {
                 }
 
                 // Récupérer les véhicules candidats (capacité >= passagers de la première réservation)
-                // Triés par capacité ASC, carburant ASC (D avant E)
-                List<Vehicule> candidates = ordonnerVehiculesParPriorite(rawCandidates, trajetsParVehicule);
+                // Triés par capacité la plus proche de la réservation, puis règles de priorité
+                List<Vehicule> candidates = ordonnerVehiculesParProximite(
+                    rawCandidates,
+                    first.getNombrePassagers(),
+                    trajetsParVehicule
+                );
                 
                 boolean assigned = false;
                 
                 // 3. Essayer chaque véhicule candidat
                 for (Vehicule vehicule : candidates) {
-                    // Essayer de combiner des réservations du même groupe (même fenêtre de temps)
-                    List<Reservation> combined = new ArrayList<>();
-                    combined.add(first);
-                    int remainingCapacity = vehicule.getCapacite() - first.getNombrePassagers();
-                    
-                    // Parcourir les réservations restantes (déjà triées par passagers DESC)
-                    for (Reservation r : pending) {
-                        if (r.getNombrePassagers() <= remainingCapacity) {
-                            combined.add(r);
-                            remainingCapacity -= r.getNombrePassagers();
-                        }
-                    }
+                    // Côté véhicule: remplir avec les portions de réservations les plus proches du reste de places.
+                    List<ReservationPortion> portions = composerPortionsPourVehicule(first, pending, vehicule.getCapacite());
+                    List<Reservation> reservationsPourRoute = extraireReservationsDistinctes(portions);
                     
                     // 4. Calculer la route de livraison (plus proche d'abord)
-                    List<RouteStop> route = calculerRoute(aeroport.getId(), combined);
+                    List<RouteStop> route = calculerRoute(aeroport.getId(), reservationsPourRoute);
                     
                     // 5. Calculer le temps total du trajet
                     int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
@@ -423,21 +440,25 @@ public class AffectationService {
                         vehicule.getId(),
                         heureDepartEffective.getTime(),
                         dureeMs,
-                        vehiculesOccupes
+                        vehiculesOccupes,
+                        vehiculesParId
                     );
 
                     Timestamp departure = new Timestamp(departMs);
                     Timestamp returnTime = new Timestamp(departMs + dureeMs);
 
-                    // Affecter toutes les réservations combinées à ce véhicule
-                    for (Reservation r : combined) {
-                        int order = getStopOrder(r.getIdLieuDestination(), route);
-                        enregistrerAffectation(vehicule, r, departure, returnTime, order, r.getNombrePassagers(), resultat);
-                    }
-
-                    // Retirer les réservations combinées (sauf first déjà retiré) de pending
-                    for (int i = 1; i < combined.size(); i++) {
-                        pending.remove(combined.get(i));
+                    // Affecter les portions retenues dans ce véhicule
+                    for (ReservationPortion portion : portions) {
+                        int order = getStopOrder(portion.reservation.getIdLieuDestination(), route);
+                        enregistrerAffectation(
+                            vehicule,
+                            portion.reservation,
+                            departure,
+                            returnTime,
+                            order,
+                            portion.passagersAffectes,
+                            resultat
+                        );
                     }
 
                     // Marquer le véhicule comme occupé
@@ -650,7 +671,8 @@ public class AffectationService {
         int aeroportId,
         Parametre parametre,
         Map<Integer, List<long[]>> vehiculesOccupes,
-        Map<Integer, Integer> trajetsParVehicule
+        Map<Integer, Integer> trajetsParVehicule,
+        Map<Integer, Vehicule> vehiculesParId
     ) throws SQLException {
         List<RouteStop> route = calculerRoute(aeroportId, Collections.singletonList(reservation));
         int totalMinutes = calculerTempsRoute(aeroportId, route, parametre);
@@ -673,7 +695,7 @@ public class AffectationService {
 
             List<Vehicule> disponiblesMemeDepart = new ArrayList<>();
             for (Vehicule vehicule : vehicules) {
-                if (estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes)) {
+                if (estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes, vehiculesParId)) {
                     disponiblesMemeDepart.add(vehicule);
                 }
             }
@@ -682,25 +704,16 @@ public class AffectationService {
                 continue;
             }
 
-            // Pour couvrir rapidement le reste, on prend d'abord les plus grandes capacités.
-            disponiblesMemeDepart.sort(
-                Comparator
-                    .comparingInt(Vehicule::getCapacite).reversed()
-                    .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
-                    .thenComparing(Vehicule::getCarburant)
-            );
-
             int restants = reservation.getNombrePassagers();
             List<PortionDecoupage> portions = new ArrayList<>();
 
-            for (Vehicule vehicule : disponiblesMemeDepart) {
-                if (restants <= 0) {
-                    break;
-                }
-
+            List<Vehicule> pool = new ArrayList<>(disponiblesMemeDepart);
+            while (restants > 0 && !pool.isEmpty()) {
+                Vehicule vehicule = trouverVehiculePlusProche(pool, restants, trajetsParVehicule);
                 int passagersAffectes = Math.min(restants, vehicule.getCapacite());
                 portions.add(new PortionDecoupage(vehicule, passagersAffectes));
                 restants -= passagersAffectes;
+                pool.remove(vehicule);
             }
 
             if (restants == 0) {
@@ -723,17 +736,21 @@ public class AffectationService {
         int vehiculeId,
         long departSouhaite,
         long dureeTrajetMs,
-        Map<Integer, List<long[]>> vehiculesOccupes
+        Map<Integer, List<long[]>> vehiculesOccupes,
+        Map<Integer, Vehicule> vehiculesParId
     ) {
+        long departMinJournalier = calculerDebutDisponibiliteJournalier(vehiculeId, departSouhaite, vehiculesParId);
+        long departInitial = Math.max(departSouhaite, departMinJournalier);
+
         List<long[]> creneaux = vehiculesOccupes.get(vehiculeId);
         if (creneaux == null || creneaux.isEmpty()) {
-            return departSouhaite;
+            return departInitial;
         }
 
         List<long[]> tries = new ArrayList<>(creneaux);
         tries.sort(Comparator.comparingLong(c -> c[0]));
 
-        long depart = departSouhaite;
+        long depart = departInitial;
         boolean collision;
         do {
             collision = false;
@@ -750,10 +767,40 @@ public class AffectationService {
         return depart;
     }
 
+    private long calculerDebutDisponibiliteJournalier(int vehiculeId, long referenceMs, Map<Integer, Vehicule> vehiculesParId) {
+        Vehicule vehicule = vehiculesParId.get(vehiculeId);
+        if (vehicule == null) {
+            return referenceMs;
+        }
+
+        java.sql.Time heureDisponibilite = vehicule.getHeureDisponibiliteEffective();
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(referenceMs);
+
+        Calendar h = Calendar.getInstance();
+        h.setTimeInMillis(heureDisponibilite.getTime());
+
+        cal.set(Calendar.HOUR_OF_DAY, h.get(Calendar.HOUR_OF_DAY));
+        cal.set(Calendar.MINUTE, h.get(Calendar.MINUTE));
+        cal.set(Calendar.SECOND, h.get(Calendar.SECOND));
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
+
     /**
      * Vérifie si un véhicule est disponible pendant un créneau
      */
-    private boolean estDisponible(int vehiculeId, long debut, long fin, Map<Integer, List<long[]>> vehiculesOccupes) {
+    private boolean estDisponible(
+        int vehiculeId,
+        long debut,
+        long fin,
+        Map<Integer, List<long[]>> vehiculesOccupes,
+        Map<Integer, Vehicule> vehiculesParId
+    ) {
+        if (debut < calculerDebutDisponibiliteJournalier(vehiculeId, debut, vehiculesParId)) {
+            return false;
+        }
+
         List<long[]> creneaux = vehiculesOccupes.get(vehiculeId);
         if (creneaux == null || creneaux.isEmpty()) {
             return true;
@@ -766,6 +813,115 @@ public class AffectationService {
             }
         }
         return true;
+    }
+
+    private List<ReservationPortion> composerPortionsPourVehicule(Reservation first, List<Reservation> pending, int capaciteVehicule) {
+        List<ReservationPortion> portions = new ArrayList<>();
+        portions.add(new ReservationPortion(first, first.getNombrePassagers()));
+
+        int restant = capaciteVehicule - first.getNombrePassagers();
+        while (restant > 0 && !pending.isEmpty()) {
+            Reservation proche = trouverReservationPlusProche(pending, restant);
+            if (proche == null) {
+                break;
+            }
+
+            int passagersAffectes = Math.min(restant, proche.getNombrePassagers());
+            portions.add(new ReservationPortion(proche, passagersAffectes));
+
+            if (passagersAffectes == proche.getNombrePassagers()) {
+                pending.remove(proche);
+            } else {
+                proche.setNombrePassagers(proche.getNombrePassagers() - passagersAffectes);
+            }
+
+            restant -= passagersAffectes;
+        }
+
+        return portions;
+    }
+
+    private Reservation trouverReservationPlusProche(List<Reservation> reservations, int cible) {
+        Reservation meilleure = null;
+        int meilleurEcart = Integer.MAX_VALUE;
+
+        for (Reservation r : reservations) {
+            int ecart = Math.abs(r.getNombrePassagers() - cible);
+            if (ecart < meilleurEcart) {
+                meilleure = r;
+                meilleurEcart = ecart;
+            } else if (ecart == meilleurEcart && meilleure != null && r.getNombrePassagers() > meilleure.getNombrePassagers()) {
+                // A écart égal, prioriser la plus grande réservation pour compléter au mieux via découpage partiel.
+                meilleure = r;
+            }
+        }
+
+        return meilleure;
+    }
+
+    private List<Reservation> extraireReservationsDistinctes(List<ReservationPortion> portions) {
+        LinkedHashMap<Integer, Reservation> map = new LinkedHashMap<>();
+        for (ReservationPortion portion : portions) {
+            map.putIfAbsent(portion.reservation.getId(), portion.reservation);
+        }
+        return new ArrayList<>(map.values());
+    }
+
+    private List<Vehicule> ordonnerVehiculesParProximite(
+        List<Vehicule> vehicles,
+        int ciblePassagers,
+        Map<Integer, Integer> trajetsParVehicule
+    ) {
+        vehicles.sort(
+            Comparator
+                .comparingInt((Vehicule v) -> Math.abs(v.getCapacite() - ciblePassagers))
+                .thenComparingInt(Vehicule::getCapacite)
+                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
+                .thenComparing(Vehicule::getCarburant)
+        );
+        return melangerEgalitesParProximite(vehicles, ciblePassagers, trajetsParVehicule);
+    }
+
+    private List<Vehicule> melangerEgalitesParProximite(
+        List<Vehicule> vehicles,
+        int ciblePassagers,
+        Map<Integer, Integer> trajetsParVehicule
+    ) {
+        List<Vehicule> result = new ArrayList<>();
+        int i = 0;
+        while (i < vehicles.size()) {
+            int j = i;
+            int ecart = Math.abs(vehicles.get(i).getCapacite() - ciblePassagers);
+            int capacite = vehicles.get(i).getCapacite();
+            int trajets = trajetsParVehicule.getOrDefault(vehicles.get(i).getId(), 0);
+            char carburant = vehicles.get(i).getCarburant();
+
+            while (j < vehicles.size()
+                    && Math.abs(vehicles.get(j).getCapacite() - ciblePassagers) == ecart
+                    && vehicles.get(j).getCapacite() == capacite
+                    && trajetsParVehicule.getOrDefault(vehicles.get(j).getId(), 0) == trajets
+                    && vehicles.get(j).getCarburant() == carburant) {
+                j++;
+            }
+
+            List<Vehicule> group = new ArrayList<>(vehicles.subList(i, j));
+            Collections.shuffle(group, random);
+            result.addAll(group);
+            i = j;
+        }
+        return result;
+    }
+
+    private Vehicule trouverVehiculePlusProche(List<Vehicule> vehicules, int cible, Map<Integer, Integer> trajetsParVehicule) {
+        return vehicules.stream()
+            .min(
+                Comparator
+                    .comparingInt((Vehicule v) -> Math.abs(v.getCapacite() - cible))
+                    .thenComparingInt(Vehicule::getCapacite)
+                    .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
+                    .thenComparing(Vehicule::getCarburant)
+            )
+            .orElse(null);
     }
 
     /**

@@ -10,7 +10,7 @@ public class VehiculeDao {
 
     public List<Vehicule> findAll() throws SQLException {
         List<Vehicule> vehicules = new ArrayList<>();
-        String sql = "SELECT id, immatriculation, capacite, carburant FROM vehicule ORDER BY capacite, carburant";
+        String sql = "SELECT id, immatriculation, capacite, carburant, heure_disponibilite FROM vehicule ORDER BY capacite, carburant";
         
         try (Connection conn = DbConfig.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
@@ -24,7 +24,7 @@ public class VehiculeDao {
     }
 
     public Vehicule findById(int id) throws SQLException {
-        String sql = "SELECT id, immatriculation, capacite, carburant FROM vehicule WHERE id = ?";
+        String sql = "SELECT id, immatriculation, capacite, carburant, heure_disponibilite FROM vehicule WHERE id = ?";
         
         try (Connection conn = DbConfig.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -45,7 +45,7 @@ public class VehiculeDao {
      */
     public List<Vehicule> findVehiculesCapables(int nombrePassagers) throws SQLException {
         List<Vehicule> vehicules = new ArrayList<>();
-        String sql = "SELECT id, immatriculation, capacite, carburant " +
+        String sql = "SELECT id, immatriculation, capacite, carburant, heure_disponibilite " +
                      "FROM vehicule " +
                      "WHERE capacite >= ? " +
                      "ORDER BY capacite ASC, carburant ASC"; // D avant E (alphabétique)
@@ -69,7 +69,7 @@ public class VehiculeDao {
      */
     public List<Vehicule> findVehiculesDisponibles(int nombrePassagers, Timestamp dateHeureDepart, Timestamp dateHeureRetour) throws SQLException {
         List<Vehicule> vehicules = new ArrayList<>();
-        String sql = "SELECT v.id, v.immatriculation, v.capacite, v.carburant " +
+        String sql = "SELECT v.id, v.immatriculation, v.capacite, v.carburant, v.heure_disponibilite " +
                      "FROM vehicule v " +
                      "WHERE v.capacite >= ? " +
                      "AND v.id NOT IN (" +
@@ -95,11 +95,13 @@ public class VehiculeDao {
     }
 
     private Vehicule mapVehicule(ResultSet rs) throws SQLException {
-        return new Vehicule(
+        Vehicule v = new Vehicule(
             rs.getInt("id"),
             rs.getString("immatriculation"),
             rs.getInt("capacite"),
             rs.getString("carburant").charAt(0)
         );
+        v.setHeureDisponibilite(rs.getTime("heure_disponibilite"));
+        return v;
     }
 }

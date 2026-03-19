@@ -2,7 +2,7 @@
 -- DONNEES DE TEST VARIABLES
 -- Base cible: operateur
 -- Usage:
--- 1) Executer d'abord 22-03-2026-schema-actuel.sql
+-- 1) Executer d'abord 22-03-2026.sql
 -- 2) Adapter les valeurs ci-dessous selon le scenario voulu
 -- 3) Lancer l'affectation pour la date de test
 -- ==================================================
@@ -52,31 +52,24 @@ INSERT INTO distance (from_id, to_id, km) VALUES
 -- -----------------------------
 -- VEHICULES (VARIABLES)
 -- -----------------------------
-INSERT INTO vehicule (immatriculation, capacite, carburant) VALUES
-('V1-DIESEL-4',   4,  'D'),
-('V2-ESSENCE-4',  4,  'E'),
-('V3-DIESEL-6',   6,  'D'),
-('V4-ESSENCE-8',  8,  'E'),
-('V5-DIESEL-12', 12,  'D');
+INSERT INTO vehicule (immatriculation, capacite, carburant, heure_disponibilite) VALUES
+('V1-DIESEL-4',   4,  'D', '00:00:00'),
+('V2-ESSENCE-4',  4,  'E', '00:00:00'),
+('V3-DIESEL-6',   6,  'D', '00:00:00'),
+('V4-ESSENCE-8',  8,  'E', '06:00:00'),
+('V5-DIESEL-12', 12,  'D', '00:00:00');
 
 -- -----------------------------
 -- RESERVATIONS (VARIABLES)
 -- -----------------------------
 -- Date de test recommandee: 2026-03-20
 INSERT INTO reservation (id_client, nombre_passagers, date_heure_depart, id_lieu_destination) VALUES
-('Client-01', 5,  '2026-03-20 08:00:00', 2),
-('Client-02', 3,  '2026-03-20 08:05:00', 3),
-('Client-03', 1,  '2026-03-20 08:09:00', 4),
-('Client-04', 4,  '2026-03-20 08:30:00', 3),
-('Client-05', 4,  '2026-03-20 08:38:00', 3),
-('Client-06', 4,  '2026-03-20 08:45:00', 2),
-('Client-07', 4,  '2026-03-20 09:00:00', 2),
-('Client-08', 7,  '2026-03-20 09:20:00', 5),
-('Client-09', 6,  '2026-03-20 09:25:00', 4),
-('Client-10', 8,  '2026-03-20 09:35:00', 3),
-('Client-11', 15, '2026-03-20 11:00:00', 2),
-('Client-12', 2,  '2026-03-20 12:00:00', 3),
-('Client-13', 2,  '2026-03-20 12:05:00', 4);
+('Client-01', 7,  '2026-03-19 09:00:00', 2),
+('Client-02', 20,  '2026-03-19 09:00:00', 3),
+('Client-03', 3,  '2026-03-19 09:10:00', 2),
+('Client-04', 10,  '2026-03-19 09:15:00', 2),
+('Client-05', 5,  '2026-03-19 09:20:00', 2),
+('Client-06', 12,  '2026-03-19 13:30:00', 2);
 
 -- -----------------------------
 -- REQUETES D'ANALYSE

@@ -45,7 +45,8 @@ CREATE TABLE vehicule (
     id SERIAL PRIMARY KEY,
     immatriculation VARCHAR(20) NOT NULL UNIQUE,
     capacite INT NOT NULL,
-    carburant CHAR(1) NOT NULL CHECK (carburant IN ('D', 'E')) -- D=Diesel, E=Essence
+    carburant CHAR(1) NOT NULL CHECK (carburant IN ('D', 'E')), -- D=Diesel, E=Essence
+    heure_disponibilite TIME NOT NULL DEFAULT '00:00:00' -- [AJOUTE] disponibilité journalière
 );
 
 -- =============================================
