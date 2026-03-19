@@ -210,6 +210,11 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
+            <div>
+                <h1>3329</h1>
+                <h1>3343</h1>
+                <h1>3289</h1>
+            </div>
             <h1>Affectations du ${dateRecherche}</h1>
             <div class="header-actions">
                 <span class="badge badge-success">${nbAffectations} affectation(s)</span>
@@ -221,6 +226,8 @@
         <c:if test="${not empty success}">
             <div class="alert alert-success">${success}</div>
         </c:if>
+
+       
         
         <!-- Véhicules et affectations -->
         <div class="card card-affectations">

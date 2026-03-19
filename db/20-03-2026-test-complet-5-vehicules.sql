@@ -160,16 +160,42 @@ INSERT INTO reservation (id_client, nombre_passagers, date_heure_depart, id_lieu
 -- ==================================================
 -- RESULTATS ATTENDUS (apres affecterVehicules('2026-03-20'))
 -- ==================================================
--- G1: V5-DIESEL-12 depart 08:09 retour 08:44 (35 min)
--- G2: V4-ESSENCE-8 depart 08:38 retour 09:02 (24 min)
--- G3: V1-DIESEL-4 depart 08:45 retour 09:05 (20 min)
--- G4: V2-ESSENCE-4 depart 09:00 retour 09:20 (20 min)
--- G5 split:
---   - R8(7) sur V4 depart 09:25 retour 10:01 (36 min)
---   - R9(6) sur V3 depart 09:25 retour 09:49 (24 min)
--- G6: V4 prioritaire mais occupe, donc depart 10:01 retour 10:25 (24 min)
--- G7: R11 non affectee (15 > capacite max 12)
--- G8: V1 (ou V2 selon trajets/capacite dispo) avec ordre de livraison Alpha puis Beta
+-- IMPORTANT: depuis la suppression de l'etape "tout le groupe dans un seul vehicule",
+-- le traitement est reservation par reservation (avec combinaison locale si capacite restante).
+--
+-- G1 (base 08:09)
+--   - R1(5) + R3(1) sur V3-DIESEL-6 : depart 08:09, retour 08:39
+--   - R2(3) sur V1-DIESEL-4         : depart 08:09, retour 08:33
+--
+-- G2 (base 08:38)
+--   - R4(4) sur V2-ESSENCE-4 : depart 08:38, retour 09:02
+--   - R5(4) sur V1-DIESEL-4  : depart 08:38, retour 09:02
+--
+-- G3 (base 08:45)
+--   - R6(4) sur V2-ESSENCE-4 : depart 09:02, retour 09:22 (decale car V2 occupe)
+--
+-- G4 (base 09:00)
+--   - R7(4) sur V1-DIESEL-4  : depart 09:02, retour 09:22 (decale car V1 occupe)
+--
+-- G5 (base 09:25)
+--   - R8(7) sur V4-ESSENCE-8 : depart 09:25, retour 10:01
+--   - R9(6) sur V3-DIESEL-6  : depart 09:25, retour 09:49
+--
+-- G6 (base 09:35)
+--   - R10(8) sur V4-ESSENCE-8 : depart 10:01, retour 10:25 (V4 prioritaire, puis decale)
+--
+-- G7 (base 11:00)
+--   - R11(15) decoupee au meme depart 11:00:
+--       * 12 passagers sur V5-DIESEL-12
+--       * 3 passagers sur V4-ESSENCE-8
+--     retour 11:20 pour les 2 vehicules
+--
+-- G8 (base 12:05)
+--   - R12(2) + R13(2) sur V2-ESSENCE-4 : depart 12:05, retour 12:36
+--   - Ordre de livraison attendu: Hotel Alpha puis Hotel Beta (tie distance aeroport)
+--
+-- Total attendu: 14 lignes dans affectation (dont 2 lignes pour R11 decoupee)
+-- Reservations non affectees attendues: aucune
 
 -- ==================================================
 -- Requetes de verification
@@ -180,6 +206,7 @@ INSERT INTO reservation (id_client, nombre_passagers, date_heure_depart, id_lieu
 --   r.id,
 --   r.id_client,
 --   r.nombre_passagers,
+--   a.nombre_passagers_affectes,
 --   to_char(r.date_heure_depart, 'HH24:MI') AS reservation_heure,
 --   v.immatriculation,
 --   to_char(a.date_heure_depart, 'HH24:MI') AS depart_effectif,

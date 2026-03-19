@@ -346,48 +346,9 @@ public class AffectationService {
             
             // Liste des réservations en attente d'affectation
             List<Reservation> pending = new ArrayList<>(groupe);
-            
-            // ÉTAPE 1: Essayer d'abord de mettre TOUT le groupe dans un seul véhicule
-            int totalPassagersGroupe = pending.stream().mapToInt(Reservation::getNombrePassagers).sum();
-            List<Vehicule> candidatsTous = ordonnerVehiculesParPriorite(
-                vehiculeDao.findVehiculesCapables(totalPassagersGroupe),
-                trajetsParVehicule
-            );
-            
-            boolean groupeCompletAffecte = false;
-            for (Vehicule vehicule : candidatsTous) {
-                // Calculer la route pour tout le groupe
-                List<RouteStop> route = calculerRoute(aeroport.getId(), pending);
-                int totalMinutes = calculerTempsRoute(aeroport.getId(), route, parametre);
 
-                long dureeMs = totalMinutes * 60 * 1000L;
-                long departMs = trouverPremierDepartDisponible(
-                    vehicule.getId(),
-                    heureDepartEffective.getTime(),
-                    dureeMs,
-                    vehiculesOccupes
-                );
-
-                Timestamp departure = new Timestamp(departMs);
-                Timestamp returnTime = new Timestamp(departMs + dureeMs);
-
-                // Affecter toutes les réservations du groupe à ce véhicule
-                for (Reservation r : pending) {
-                    int order = getStopOrder(r.getIdLieuDestination(), route);
-                    enregistrerAffectation(vehicule, r, departure, returnTime, order, r.getNombrePassagers(), resultat);
-                }
-
-                vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
-                    .add(new long[]{departure.getTime(), returnTime.getTime()});
-                incrementerTrajets(vehicule.getId(), trajetsParVehicule);
-
-                pending.clear();
-                groupeCompletAffecte = true;
-                break;
-            }
-            
-            // ÉTAPE 2: Si pas de véhicule assez grand, diviser le groupe
-            while (!pending.isEmpty() && !groupeCompletAffecte) {
+            // Traitement réservation par réservation (avec découpage si nécessaire)
+            while (!pending.isEmpty()) {
                 Reservation first = pending.remove(0);
 
                 // Aucun véhicule ne peut prendre la réservation en un seul trajet: tenter le découpage.
