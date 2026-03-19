@@ -180,6 +180,36 @@ public class AffectationService {
     }
 
     /**
+     * Portion d'une réservation affectée à un véhicule (cas de découpage).
+     */
+    private static class PortionDecoupage {
+        Vehicule vehicule;
+        int passagersAffectes;
+
+        PortionDecoupage(Vehicule vehicule, int passagersAffectes) {
+            this.vehicule = vehicule;
+            this.passagersAffectes = passagersAffectes;
+        }
+    }
+
+    /**
+     * Plan d'affectation d'une réservation découpée.
+     */
+    private static class PlanDecoupage {
+        Timestamp departure;
+        Timestamp returnTime;
+        List<RouteStop> route;
+        List<PortionDecoupage> portions;
+
+        PlanDecoupage(Timestamp departure, Timestamp returnTime, List<RouteStop> route, List<PortionDecoupage> portions) {
+            this.departure = departure;
+            this.returnTime = returnTime;
+            this.route = route;
+            this.portions = portions;
+        }
+    }
+
+    /**
      * Génère la clé de regroupement "vol" à partir d'un timestamp
      * Même vol = même heure:minute de départ
      * @deprecated Remplacé par le regroupement par fenêtre de temps d'attente
@@ -297,9 +327,18 @@ public class AffectationService {
         // Map pour suivre le nombre de trajets par véhicule pour la date en cours
         Map<Integer, Integer> trajetsParVehicule = new HashMap<>();
         
+        // Réservations reportées au groupe suivant (ex: découpage impossible au même départ)
+        List<Reservation> reservationsReportees = new ArrayList<>();
+
         // 2. Traiter chaque groupe dans l'ordre chronologique
-        for (GroupeReservations groupeRes : groupes) {
-            List<Reservation> groupe = groupeRes.reservations;
+        for (int indexGroupe = 0; indexGroupe < groupes.size(); indexGroupe++) {
+            GroupeReservations groupeRes = groupes.get(indexGroupe);
+            List<Reservation> groupe = new ArrayList<>();
+            if (!reservationsReportees.isEmpty()) {
+                groupe.addAll(reservationsReportees);
+                reservationsReportees.clear();
+            }
+            groupe.addAll(groupeRes.reservations);
             Timestamp heureDepartEffective = groupeRes.heureDepartEffective;
             
             // Trier par nombre de passagers DECROISSANT
@@ -335,22 +374,7 @@ public class AffectationService {
                 // Affecter toutes les réservations du groupe à ce véhicule
                 for (Reservation r : pending) {
                     int order = getStopOrder(r.getIdLieuDestination(), route);
-                    affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
-
-                    AffectationDetails ad = new AffectationDetails();
-                    ad.setIdVehicule(vehicule.getId());
-                    ad.setImmatriculation(vehicule.getImmatriculation());
-                    ad.setCapacite(vehicule.getCapacite());
-                    ad.setCarburant(vehicule.getCarburant());
-                    ad.setIdReservation(r.getId());
-                    ad.setIdClient(r.getIdClient());
-                    ad.setNombrePassagers(r.getNombrePassagers());
-                    ad.setLieuDepart(r.getLieuDepart());
-                    ad.setLieuArrivee(r.getLieuDestination());
-                    ad.setDateHeureDepart(departure);
-                    ad.setDateHeureRetour(returnTime);
-                    ad.setOrdreLivraison(order);
-                    resultat.addAffectation(ad);
+                    enregistrerAffectation(vehicule, r, departure, returnTime, order, r.getNombrePassagers(), resultat);
                 }
 
                 vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
@@ -365,13 +389,50 @@ public class AffectationService {
             // ÉTAPE 2: Si pas de véhicule assez grand, diviser le groupe
             while (!pending.isEmpty() && !groupeCompletAffecte) {
                 Reservation first = pending.remove(0);
-                
+
+                // Aucun véhicule ne peut prendre la réservation en un seul trajet: tenter le découpage.
+                List<Vehicule> rawCandidates = vehiculeDao.findVehiculesCapables(first.getNombrePassagers());
+                if (rawCandidates.isEmpty()) {
+                    PlanDecoupage plan = trouverPlanDecoupageReservation(
+                        first,
+                        indexGroupe,
+                        groupes,
+                        heureDepartEffective,
+                        aeroport.getId(),
+                        parametre,
+                        vehiculesOccupes,
+                        trajetsParVehicule
+                    );
+
+                    if (plan != null) {
+                        int order = getStopOrder(first.getIdLieuDestination(), plan.route);
+                        for (PortionDecoupage portion : plan.portions) {
+                            enregistrerAffectation(
+                                portion.vehicule,
+                                first,
+                                plan.departure,
+                                plan.returnTime,
+                                order,
+                                portion.passagersAffectes,
+                                resultat
+                            );
+
+                            vehiculesOccupes.computeIfAbsent(portion.vehicule.getId(), k -> new ArrayList<>())
+                                .add(new long[]{plan.departure.getTime(), plan.returnTime.getTime()});
+                            incrementerTrajets(portion.vehicule.getId(), trajetsParVehicule);
+                        }
+                    } else if (indexGroupe < groupes.size() - 1) {
+                        // Pas de départ commun possible maintenant: on reporte au groupe suivant.
+                        reservationsReportees.add(first);
+                    } else {
+                        resultat.addReservationNonAffectee(first);
+                    }
+                    continue;
+                }
+
                 // Récupérer les véhicules candidats (capacité >= passagers de la première réservation)
                 // Triés par capacité ASC, carburant ASC (D avant E)
-                List<Vehicule> candidates = ordonnerVehiculesParPriorite(
-                    vehiculeDao.findVehiculesCapables(first.getNombrePassagers()),
-                    trajetsParVehicule
-                );
+                List<Vehicule> candidates = ordonnerVehiculesParPriorite(rawCandidates, trajetsParVehicule);
                 
                 boolean assigned = false;
                 
@@ -410,23 +471,7 @@ public class AffectationService {
                     // Affecter toutes les réservations combinées à ce véhicule
                     for (Reservation r : combined) {
                         int order = getStopOrder(r.getIdLieuDestination(), route);
-                        affectationDao.insert(vehicule.getId(), r.getId(), departure, returnTime, order);
-
-                        // Construire l'objet de détails pour le résultat
-                        AffectationDetails ad = new AffectationDetails();
-                        ad.setIdVehicule(vehicule.getId());
-                        ad.setImmatriculation(vehicule.getImmatriculation());
-                        ad.setCapacite(vehicule.getCapacite());
-                        ad.setCarburant(vehicule.getCarburant());
-                        ad.setIdReservation(r.getId());
-                        ad.setIdClient(r.getIdClient());
-                        ad.setNombrePassagers(r.getNombrePassagers());
-                        ad.setLieuDepart(r.getLieuDepart());
-                        ad.setLieuArrivee(r.getLieuDestination());
-                        ad.setDateHeureDepart(departure);
-                        ad.setDateHeureRetour(returnTime);
-                        ad.setOrdreLivraison(order);
-                        resultat.addAffectation(ad);
+                        enregistrerAffectation(vehicule, r, departure, returnTime, order, r.getNombrePassagers(), resultat);
                     }
 
                     // Retirer les réservations combinées (sauf first déjà retiré) de pending
@@ -592,6 +637,122 @@ public class AffectationService {
 
     private void incrementerTrajets(int vehiculeId, Map<Integer, Integer> trajetsParVehicule) {
         trajetsParVehicule.put(vehiculeId, trajetsParVehicule.getOrDefault(vehiculeId, 0) + 1);
+    }
+
+    /**
+     * Enregistre une affectation en base et dans le résultat métier.
+     */
+    private void enregistrerAffectation(
+        Vehicule vehicule,
+        Reservation reservation,
+        Timestamp departure,
+        Timestamp returnTime,
+        int order,
+        int passagersAffectes,
+        ResultatAffectation resultat
+    ) throws SQLException {
+        affectationDao.insert(
+            vehicule.getId(),
+            reservation.getId(),
+            departure,
+            returnTime,
+            order,
+            passagersAffectes
+        );
+
+        AffectationDetails ad = new AffectationDetails();
+        ad.setIdVehicule(vehicule.getId());
+        ad.setImmatriculation(vehicule.getImmatriculation());
+        ad.setCapacite(vehicule.getCapacite());
+        ad.setCarburant(vehicule.getCarburant());
+        ad.setIdReservation(reservation.getId());
+        ad.setIdClient(reservation.getIdClient());
+        ad.setNombrePassagers(passagersAffectes);
+        ad.setLieuDepart(reservation.getLieuDepart());
+        ad.setLieuArrivee(reservation.getLieuDestination());
+        ad.setDateHeureDepart(departure);
+        ad.setDateHeureRetour(returnTime);
+        ad.setOrdreLivraison(order);
+        resultat.addAffectation(ad);
+    }
+
+    /**
+     * Cherche un plan de découpage d'une réservation en plusieurs véhicules.
+     * Toutes les voitures du découpage doivent partir exactement au même moment.
+     * Si impossible au groupe courant, on tentera au groupe suivant.
+     */
+    private PlanDecoupage trouverPlanDecoupageReservation(
+        Reservation reservation,
+        int indexGroupe,
+        List<GroupeReservations> groupes,
+        Timestamp departBase,
+        int aeroportId,
+        Parametre parametre,
+        Map<Integer, List<long[]>> vehiculesOccupes,
+        Map<Integer, Integer> trajetsParVehicule
+    ) throws SQLException {
+        List<RouteStop> route = calculerRoute(aeroportId, Collections.singletonList(reservation));
+        int totalMinutes = calculerTempsRoute(aeroportId, route, parametre);
+        long dureeMs = totalMinutes * 60 * 1000L;
+
+        // Départs testés: groupe courant puis vagues suivantes.
+        LinkedHashSet<Long> departsCandidats = new LinkedHashSet<>();
+        departsCandidats.add(departBase.getTime());
+        for (int i = indexGroupe + 1; i < groupes.size(); i++) {
+            departsCandidats.add(groupes.get(i).heureDepartEffective.getTime());
+        }
+
+        List<Vehicule> vehicules = ordonnerVehiculesParPriorite(
+            vehiculeDao.findVehiculesCapables(1),
+            trajetsParVehicule
+        );
+
+        for (long departMs : departsCandidats) {
+            long finMs = departMs + dureeMs;
+
+            List<Vehicule> disponiblesMemeDepart = new ArrayList<>();
+            for (Vehicule vehicule : vehicules) {
+                if (estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes)) {
+                    disponiblesMemeDepart.add(vehicule);
+                }
+            }
+
+            if (disponiblesMemeDepart.isEmpty()) {
+                continue;
+            }
+
+            // Pour couvrir rapidement le reste, on prend d'abord les plus grandes capacités.
+            disponiblesMemeDepart.sort(
+                Comparator
+                    .comparingInt(Vehicule::getCapacite).reversed()
+                    .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
+                    .thenComparing(Vehicule::getCarburant)
+            );
+
+            int restants = reservation.getNombrePassagers();
+            List<PortionDecoupage> portions = new ArrayList<>();
+
+            for (Vehicule vehicule : disponiblesMemeDepart) {
+                if (restants <= 0) {
+                    break;
+                }
+
+                int passagersAffectes = Math.min(restants, vehicule.getCapacite());
+                portions.add(new PortionDecoupage(vehicule, passagersAffectes));
+                restants -= passagersAffectes;
+            }
+
+            if (restants == 0) {
+                return new PlanDecoupage(
+                    new Timestamp(departMs),
+                    new Timestamp(finMs),
+                    route,
+                    portions
+                );
+            }
+        }
+
+        return null;
     }
 
     /**

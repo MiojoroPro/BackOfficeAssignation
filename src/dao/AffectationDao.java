@@ -12,8 +12,15 @@ public class AffectationDao {
     /**
      * Insère une nouvelle affectation
      */
-    public void insert(int idVehicule, int idReservation, Timestamp dateHeureDepart, Timestamp dateHeureRetour, int ordreLivraison) throws SQLException {
-        String sql = "INSERT INTO affectation (id_vehicule, id_reservation, date_heure_depart, date_heure_retour, ordre_livraison) VALUES (?, ?, ?, ?, ?)";
+    public void insert(
+        int idVehicule,
+        int idReservation,
+        Timestamp dateHeureDepart,
+        Timestamp dateHeureRetour,
+        int ordreLivraison,
+        int nombrePassagersAffectes
+    ) throws SQLException {
+        String sql = "INSERT INTO affectation (id_vehicule, id_reservation, date_heure_depart, date_heure_retour, ordre_livraison, nombre_passagers_affectes) VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection conn = DbConfig.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idVehicule);
@@ -21,6 +28,7 @@ public class AffectationDao {
             ps.setTimestamp(3, dateHeureDepart);
             ps.setTimestamp(4, dateHeureRetour);
             ps.setInt(5, ordreLivraison);
+            ps.setInt(6, nombrePassagersAffectes);
             ps.executeUpdate();
         }
     }
@@ -42,7 +50,7 @@ public class AffectationDao {
      */
     public List<AffectationDetails> findAllDetails() throws SQLException {
         String sql = "SELECT a.id as id_affectation, v.id as id_vehicule, v.immatriculation, v.capacite, v.carburant, " +
-                     "r.id as id_reservation, r.id_client, r.nombre_passagers, " +
+                     "r.id as id_reservation, r.id_client, a.nombre_passagers_affectes, " +
                      "aer.libelle as lieu_depart, l.libelle as lieu_arrivee, " +
                      "a.date_heure_depart, a.date_heure_retour, a.ordre_livraison " +
                      "FROM affectation a " +
@@ -68,7 +76,7 @@ public class AffectationDao {
      */
     public List<AffectationDetails> findDetailsByDate(Date date) throws SQLException {
         String sql = "SELECT a.id as id_affectation, v.id as id_vehicule, v.immatriculation, v.capacite, v.carburant, " +
-                     "r.id as id_reservation, r.id_client, r.nombre_passagers, " +
+                     "r.id as id_reservation, r.id_client, a.nombre_passagers_affectes, " +
                      "aer.libelle as lieu_depart, l.libelle as lieu_arrivee, " +
                      "a.date_heure_depart, a.date_heure_retour, a.ordre_livraison " +
                      "FROM affectation a " +
@@ -126,7 +134,7 @@ public class AffectationDao {
         ad.setCarburant(rs.getString("carburant").charAt(0));
         ad.setIdReservation(rs.getInt("id_reservation"));
         ad.setIdClient(rs.getString("id_client"));
-        ad.setNombrePassagers(rs.getInt("nombre_passagers"));
+        ad.setNombrePassagers(rs.getInt("nombre_passagers_affectes"));
         ad.setLieuDepart(rs.getString("lieu_depart"));
         ad.setLieuArrivee(rs.getString("lieu_arrivee"));
         ad.setDateHeureDepart(rs.getTimestamp("date_heure_depart"));

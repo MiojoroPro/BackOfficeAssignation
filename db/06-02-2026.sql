@@ -72,9 +72,9 @@ CREATE TABLE affectation (
     date_heure_depart TIMESTAMP NOT NULL, -- Heure de départ effective
     date_heure_retour TIMESTAMP NOT NULL, -- Heure de retour calculée
     ordre_livraison INT NOT NULL DEFAULT 1, -- Ordre de livraison (1 = premier arrêt, 2 = deuxième, etc.)
+    nombre_passagers_affectes INT NOT NULL, -- Nombre de passagers pris par ce véhicule
     FOREIGN KEY (id_vehicule) REFERENCES vehicule(id),
-    FOREIGN KEY (id_reservation) REFERENCES reservation(id),
-    UNIQUE (id_reservation) -- Une réservation ne peut avoir qu'une affectation
+    FOREIGN KEY (id_reservation) REFERENCES reservation(id)
 );
 
 -- =============================================
