@@ -92,12 +92,21 @@
             color: #1a1a1a;
         }
         .card-body { padding: 0; }
+
+        .card-affectations .card-body {
+            padding: 10px;
+            background: #f8f9fa;
+        }
         
         /* Vehicule Section */
-        .vehicule-section {
-            border-bottom: 1px solid #e0e0e0;
+        .card-affectations .vehicule-section {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
         }
-        .vehicule-section:last-child { border-bottom: none; }
+        .card-affectations .vehicule-section:last-child { margin-bottom: 0; }
         .vehicule-header {
             padding: 16px 20px;
             background: #f8f9fa;
@@ -155,6 +164,7 @@
             padding: 12px 20px;
             border-bottom: 1px solid #f0f0f0;
             color: #333;
+            vertical-align: top;
         }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: #fafafa; }
@@ -213,7 +223,7 @@
         </c:if>
         
         <!-- Véhicules et affectations -->
-        <div class="card">
+        <div class="card card-affectations">
             <div class="card-header">
                 <h2>Véhicules et réservations assignées</h2>
             </div>
@@ -227,46 +237,50 @@
                     </c:when>
                     <c:otherwise>
                         <c:forEach var="entry" items="${affectationsParVehicule}">
-                            <div class="vehicule-section">
-                                <div class="vehicule-header">
-                                    <div class="vehicule-info">
-                                        <h3>${entry.key}</h3>
-                                        <div class="vehicule-meta">
-                                            <span>${entry.value[0].capacite} places</span>
-                                            <span class="tag ${entry.value[0].diesel ? 'tag-diesel' : 'tag-essence'}">
-                                                ${entry.value[0].carburantLibelle}
-                                            </span>
+                            <c:forEach var="voyage" items="${entry.value}" varStatus="voyageStatus">
+                                <div class="vehicule-section">
+                                    <div class="vehicule-header">
+                                        <div class="vehicule-info">
+                                            <h3>${entry.key}</h3>
+                                            <div class="vehicule-meta">
+                                                <span>${voyage.capacite} places</span>
+                                                <span class="tag ${voyage.diesel ? 'tag-diesel' : 'tag-essence'}">
+                                                    ${voyage.carburantLibelle}
+                                                </span>
+                                                <span>Départ <span class="time"><fmt:formatDate value="${voyage.dateHeureDepart}" pattern="HH:mm"/></span></span>
+                                                <span>Retour <span class="time"><fmt:formatDate value="${voyage.dateHeureRetour}" pattern="HH:mm"/></span></span>
+                                            </div>
+                                        </div>
+                                        <div class="trajets-count">
+                                            Voyage ${voyageStatus.index + 1} • ${voyage.nombreReservations} réservation(s)
                                         </div>
                                     </div>
-                                    <div class="trajets-count">${entry.value.size()} trajet(s)</div>
-                                </div>
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Ordre</th>
-                                            <th>Client</th>
-                                            <th>Passagers</th>
-                                            <th>Départ</th>
-                                            <th>Heure départ</th>
-                                            <th>Destination</th>
-                                            <th>Heure retour</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <c:forEach var="affectation" items="${entry.value}">
+                                    <table>
+                                        <thead>
                                             <tr>
-                                                <td><span class="badge badge-success">${affectation.ordreLivraison}</span></td>
-                                                <td><strong>${affectation.idClient}</strong></td>
-                                                <td><span class="passagers">${affectation.nombrePassagers}</span></td>
-                                                <td>${affectation.lieuDepart}</td>
-                                                <td><span class="time"><fmt:formatDate value="${affectation.dateHeureDepart}" pattern="HH:mm"/></span></td>
-                                                <td>${affectation.lieuArrivee}</td>
-                                                <td><span class="time"><fmt:formatDate value="${affectation.dateHeureRetour}" pattern="HH:mm"/></span></td>
+                                                <th>Ordre</th>
+                                                <th>Client</th>
+                                                <th>Passagers</th>
+                                                <th>Départ</th>
+                                                <th>Heure départ</th>
+                                                <th>Destination</th>
                                             </tr>
-                                        </c:forEach>
-                                    </tbody>
-                                </table>
-                            </div>
+                                        </thead>
+                                        <tbody>
+                                            <c:forEach var="affectation" items="${voyage.reservations}">
+                                                <tr>
+                                                    <td><span class="badge badge-success">${affectation.ordreLivraison}</span></td>
+                                                    <td><strong>${affectation.idClient}</strong></td>
+                                                    <td><span class="passagers">${affectation.nombrePassagers}</span></td>
+                                                    <td>${affectation.lieuDepart}</td>
+                                                    <td><span class="time"><fmt:formatDate value="${affectation.dateHeureDepart}" pattern="HH:mm"/></span></td>
+                                                    <td>${affectation.lieuArrivee}</td>
+                                                </tr>
+                                            </c:forEach>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </c:forEach>
                         </c:forEach>
                     </c:otherwise>
                 </c:choose>

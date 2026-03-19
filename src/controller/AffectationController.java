@@ -45,7 +45,7 @@ public class AffectationController {
             
             // Récupérer les affectations existantes
             List<AffectationDetails> affectations = affectationService.getAffectationsByDate(date);
-            Map<String, List<AffectationDetails>> affectationsParVehicule = affectationService.groupByVehicule(affectations);
+            Map<String, List<AffectationService.VoyageAffectation>> affectationsParVehicule = affectationService.groupByVehiculeEtVoyage(affectations);
             
             // Récupérer les réservations non affectées
             List<Reservation> reservationsNonAffectees = affectationService.getReservationsNonAffectees(date);
@@ -82,7 +82,7 @@ public class AffectationController {
             
             // Récupérer les affectations après traitement
             List<AffectationDetails> affectations = affectationService.getAffectationsByDate(date);
-            Map<String, List<AffectationDetails>> affectationsParVehicule = affectationService.groupByVehicule(affectations);
+            Map<String, List<AffectationService.VoyageAffectation>> affectationsParVehicule = affectationService.groupByVehiculeEtVoyage(affectations);
             
             // Réservations non affectées
             List<Reservation> reservationsNonAffectees = resultat.getReservationsNonAffectees();
