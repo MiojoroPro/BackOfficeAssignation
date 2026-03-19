@@ -377,7 +377,9 @@ public class AffectationService {
     /**
      * Calcule le temps total du trajet en minutes.
      * 
-     * Itinéraire: Aéroport → Arrêt1 (+ attente) → Arrêt2 (+ attente) → ... → Aéroport
+     * Itinéraire: Aéroport → Arrêt1 → Arrêt2 → ... → Aéroport
+     * Le temps d'attente est géré au niveau de l'aéroport via l'heure de départ effective,
+     * il n'est donc pas ajouté à chaque arrêt.
      * 
      * @param aeroportId ID de l'aéroport
      * @param route Liste ordonnée des arrêts
@@ -394,7 +396,6 @@ public class AffectationService {
         for (RouteStop stop : route) {
             double distKm = distanceDao.getDistanceKm(currentId, stop.lieuId);
             totalMinutes += Math.ceil((distKm / parametre.getVitesseMoyenne()) * 60);
-            totalMinutes += parametre.getTempsAttente(); // Temps de dépose à chaque arrêt
             currentId = stop.lieuId;
         }
         
