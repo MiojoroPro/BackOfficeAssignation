@@ -95,6 +95,28 @@ public class ReservationDao {
     }
 
     /**
+     * Trouve toutes les réservations non affectées, toutes dates confondues
+     */
+    public List<Reservation> findNonAffectees() throws SQLException {
+        String sql = "SELECT r.id, r.id_client, r.nombre_passagers, r.date_heure_depart, " +
+                     "r.id_lieu_destination, l.libelle AS lieu_destination, aer.libelle AS lieu_depart " +
+                     "FROM reservation r " +
+                     "JOIN lieu l ON r.id_lieu_destination = l.id " +
+                     "CROSS JOIN (SELECT libelle FROM lieu WHERE type = 'AEROPORT' LIMIT 1) aer " +
+                     "WHERE r.id NOT IN (SELECT id_reservation FROM affectation) " +
+                     "ORDER BY r.date_heure_depart ASC";
+        List<Reservation> reservations = new ArrayList<>();
+        try (Connection conn = DbConfig.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                reservations.add(mapReservation(rs));
+            }
+        }
+        return reservations;
+    }
+
+    /**
      * Trouve une réservation par son ID
      */
     public Reservation findById(int id) throws SQLException {

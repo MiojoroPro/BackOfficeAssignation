@@ -124,7 +124,7 @@
         function rechercher() {
             var date = document.getElementById('date').value;
             if (date) {
-                window.location.href = 'affectation/rechercher?date=' + date;
+                window.location.href = '${pageContext.request.contextPath}/affectation/rechercher?date=' + date;
             } else {
                 alert('Veuillez sélectionner une date');
             }
@@ -134,13 +134,13 @@
             var date = document.getElementById('date').value;
             if (date) {
                 if (confirm('Lancer l\'affectation automatique pour cette date ?')) {
-                    window.location.href = 'affectation/affecter?date=' + date;
+                    window.location.href = '${pageContext.request.contextPath}/affectation/affecter?date=' + date;
                 }
             } else {
                 alert('Veuillez sélectionner une date');
             }
         }
-        
+
         document.getElementById('date').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); rechercher(); }
         });

@@ -72,6 +72,11 @@
             color: #155724;
             border: 1px solid #c3e6cb;
         }
+        .alert-error {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
         
         /* Card */
         .card {
@@ -214,12 +219,15 @@
             <div class="header-actions">
                 <span class="badge badge-success">${nbAffectations} affectation(s)</span>
                 <span class="badge badge-warning">${nbNonAffectees} non affectée(s)</span>
-                <a href="affectation" class="btn btn-outline">Retour</a>
+                <a href="${pageContext.request.contextPath}/affectation" class="btn btn-outline">Retour</a>
             </div>
         </div>
         
         <c:if test="${not empty success}">
             <div class="alert alert-success">${success}</div>
+        </c:if>
+        <c:if test="${not empty error}">
+            <div class="alert alert-error">${error}</div>
         </c:if>
         
         <!-- Véhicules et affectations -->
@@ -329,7 +337,7 @@
         
         <!-- Footer -->
         <div class="footer-actions">
-            <a href="affectation/affecter?date=${dateRecherche}" 
+            <a href="${pageContext.request.contextPath}/affectation/affecter?date=${dateRecherche}" 
                class="btn btn-primary"
                onclick="return confirm('Relancer l\'affectation automatique ?')">
                 Relancer l'affectation
