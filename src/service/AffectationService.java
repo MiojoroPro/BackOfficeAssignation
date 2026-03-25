@@ -324,6 +324,8 @@ public class AffectationService {
         
         // Map pour suivre les créneaux occupés par véhicule
         Map<Integer, List<long[]>> vehiculesOccupes = new HashMap<>();
+        // Heure minimale de disponibilité par véhicule (ex: 13:00)
+        Map<Integer, Long> disponibiliteInitialeVehicules = vehiculeDao.findHeuresDisponibiliteInitiale(date);
         // Map pour suivre le nombre de trajets par véhicule pour la date en cours
         Map<Integer, Integer> trajetsParVehicule = new HashMap<>();
         
@@ -362,6 +364,7 @@ public class AffectationService {
                         aeroport.getId(),
                         parametre,
                         vehiculesOccupes,
+                        disponibiliteInitialeVehicules,
                         trajetsParVehicule
                     );
 
@@ -392,8 +395,8 @@ public class AffectationService {
                 }
 
                 // Récupérer les véhicules candidats (capacité >= passagers de la première réservation)
-                // Triés par capacité ASC, carburant ASC (D avant E)
-                List<Vehicule> candidates = ordonnerVehiculesParPriorite(rawCandidates, trajetsParVehicule);
+                // Triés par capacité ASC, carburant ASC (D avant E), heure disponibilité ASC
+                List<Vehicule> candidates = ordonnerVehiculesParPriorite(rawCandidates, trajetsParVehicule, disponibiliteInitialeVehicules);
                 
                 boolean assigned = false;
                 
@@ -421,7 +424,10 @@ public class AffectationService {
                     long dureeMs = totalMinutes * 60 * 1000L;
                     long departMs = trouverPremierDepartDisponible(
                         vehicule.getId(),
-                        heureDepartEffective.getTime(),
+                        Math.max(
+                            heureDepartEffective.getTime(),
+                            disponibiliteInitialeVehicules.getOrDefault(vehicule.getId(), heureDepartEffective.getTime())
+                        ),
                         dureeMs,
                         vehiculesOccupes
                     );
@@ -558,31 +564,34 @@ public class AffectationService {
      * pour introduire l'aléatoire en cas d'égalité parfaite.
      * L'ordre global est préservé: capacité ASC, Diesel avant Essence.
      */
-    private List<Vehicule> ordonnerVehiculesParPriorite(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule) {
+    private List<Vehicule> ordonnerVehiculesParPriorite(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
         vehicles.sort(
             Comparator
-                .comparingInt(Vehicule::getCapacite)
-                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
-                .thenComparing(Vehicule::getCarburant)
+                .comparingInt(Vehicule::getCapacite)                                                    // Capacité la plus proche (ASC)
+                .thenComparingLong(v -> disponibiliteInitialeVehicules.getOrDefault(v.getId(), 0L)) // Heure de disponibilité (plus tôt d'abord)
+                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))                 // Moins de trajets
+                .thenComparing(Vehicule::getCarburant)                                                 // Diesel avant Essence
         );
-        return melangerEgalites(vehicles, trajetsParVehicule);
+        return melangerEgalites(vehicles, trajetsParVehicule, disponibiliteInitialeVehicules);
     }
 
     /**
-     * Mélange les véhicules de même priorité (même capacité, mêmes trajets, même carburant)
+     * Mélange les véhicules de même priorité (même capacité, heure de disponibilité, trajets, carburant)
      * pour introduire l'aléatoire en cas d'égalité parfaite.
      */
-    private List<Vehicule> melangerEgalites(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule) {
+    private List<Vehicule> melangerEgalites(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
         List<Vehicule> result = new ArrayList<>();
         int i = 0;
         while (i < vehicles.size()) {
             int j = i;
             int capacite = vehicles.get(i).getCapacite();
+            long disponibilite = disponibiliteInitialeVehicules.getOrDefault(vehicles.get(i).getId(), 0L);
             int trajets = trajetsParVehicule.getOrDefault(vehicles.get(i).getId(), 0);
             char carburant = vehicles.get(i).getCarburant();
 
             while (j < vehicles.size()
                     && vehicles.get(j).getCapacite() == capacite
+                    && disponibiliteInitialeVehicules.getOrDefault(vehicles.get(j).getId(), 0L) == disponibilite
                     && trajetsParVehicule.getOrDefault(vehicles.get(j).getId(), 0) == trajets
                     && vehicles.get(j).getCarburant() == carburant) {
                 j++;
@@ -650,6 +659,7 @@ public class AffectationService {
         int aeroportId,
         Parametre parametre,
         Map<Integer, List<long[]>> vehiculesOccupes,
+        Map<Integer, Long> disponibiliteInitialeVehicules,
         Map<Integer, Integer> trajetsParVehicule
     ) throws SQLException {
         List<RouteStop> route = calculerRoute(aeroportId, Collections.singletonList(reservation));
@@ -665,7 +675,8 @@ public class AffectationService {
 
         List<Vehicule> vehicules = ordonnerVehiculesParPriorite(
             vehiculeDao.findVehiculesCapables(1),
-            trajetsParVehicule
+            trajetsParVehicule,
+            disponibiliteInitialeVehicules
         );
 
         for (long departMs : departsCandidats) {
@@ -673,7 +684,8 @@ public class AffectationService {
 
             List<Vehicule> disponiblesMemeDepart = new ArrayList<>();
             for (Vehicule vehicule : vehicules) {
-                if (estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes)) {
+                long dispoInitiale = disponibiliteInitialeVehicules.getOrDefault(vehicule.getId(), departMs);
+                if (departMs >= dispoInitiale && estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes)) {
                     disponiblesMemeDepart.add(vehicule);
                 }
             }
@@ -797,9 +809,11 @@ public class AffectationService {
     /**
      * Groupe les affectations par véhicule puis par voyage.
      * Un voyage correspond à un même créneau départ/retour pour un véhicule.
+     * Les voyages sont triés GLOBALEMENT par heure de départ (pas par véhicule).
      */
     public Map<String, List<VoyageAffectation>> groupByVehiculeEtVoyage(List<AffectationDetails> affectations) {
         Map<String, Map<String, VoyageAffectation>> temp = new LinkedHashMap<>();
+        List<VoyageAffectation> allVoyages = new ArrayList<>();
 
         for (AffectationDetails ad : affectations) {
             String vehiculeKey = ad.getImmatriculation();
@@ -815,6 +829,7 @@ public class AffectationService {
                 v.setCarburant(ad.getCarburant());
                 v.setDateHeureDepart(ad.getDateHeureDepart());
                 v.setDateHeureRetour(ad.getDateHeureRetour());
+                allVoyages.add(v);  // Ajouter à la liste globale
                 return v;
             });
 
@@ -822,20 +837,25 @@ public class AffectationService {
             voyage.addPassagers(ad.getNombrePassagers());
         }
 
-        Map<String, List<VoyageAffectation>> grouped = new LinkedHashMap<>();
-        for (Map.Entry<String, Map<String, VoyageAffectation>> entry : temp.entrySet()) {
-            List<VoyageAffectation> voyages = new ArrayList<>(entry.getValue().values());
-            voyages.sort(Comparator.comparing(VoyageAffectation::getDateHeureDepart));
+        // Trier GLOBALEMENT par heure de départ
+        allVoyages.sort(Comparator.comparing(VoyageAffectation::getDateHeureDepart)
+            .thenComparing(VoyageAffectation::getImmatriculation));
 
-            for (VoyageAffectation voyage : voyages) {
+        // Reconstruire la Map en respectant l'ordre global
+        Map<String, List<VoyageAffectation>> grouped = new LinkedHashMap<>();
+        for (VoyageAffectation voyage : allVoyages) {
+            grouped.computeIfAbsent(voyage.getImmatriculation(), k -> new ArrayList<>()).add(voyage);
+        }
+
+        // Trier les réservations dans chaque voyage
+        for (List<VoyageAffectation> voyageList : grouped.values()) {
+            for (VoyageAffectation voyage : voyageList) {
                 voyage.getReservations().sort(
                     Comparator
                         .comparingInt(AffectationDetails::getOrdreLivraison)
                         .thenComparingInt(AffectationDetails::getIdReservation)
                 );
             }
-
-            grouped.put(entry.getKey(), voyages);
         }
 
         return grouped;

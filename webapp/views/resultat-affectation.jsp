@@ -254,8 +254,10 @@
                                                 <span class="tag ${voyage.diesel ? 'tag-diesel' : 'tag-essence'}">
                                                     ${voyage.carburantLibelle}
                                                 </span>
-                                                <span>Départ <span class="time"><fmt:formatDate value="${voyage.dateHeureDepart}" pattern="HH:mm"/></span></span>
-                                                <span>Retour <span class="time"><fmt:formatDate value="${voyage.dateHeureRetour}" pattern="HH:mm"/></span></span>
+                                                <span style="background: #e3f2fd; padding: 4px 12px; border-radius: 4px; font-weight: 600; color: #1565c0;">
+                                                    Départ <span class="time"><fmt:formatDate value="${voyage.dateHeureDepart}" pattern="HH:mm"/></span>   
+                                                    Retour <span class="time"><fmt:formatDate value="${voyage.dateHeureRetour}" pattern="HH:mm"/></span>
+                                                </span>
                                             </div>
                                         </div>
                                         <div class="trajets-count">

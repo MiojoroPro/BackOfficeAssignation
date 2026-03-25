@@ -3,8 +3,12 @@ package dao;
 import config.DbConfig;
 import model.Vehicule;
 import java.sql.*;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class VehiculeDao {
 
@@ -92,6 +96,56 @@ public class VehiculeDao {
             }
         }
         return vehicules;
+    }
+
+    /**
+     * Retourne, pour chaque véhicule, son heure minimale de disponibilité pour la date donnée.
+     * Si la colonne heure_disponibilite n'existe pas, tous les véhicules sont disponibles à 00:00.
+     */
+    public Map<Integer, Long> findHeuresDisponibiliteInitiale(Date date) throws SQLException {
+        Map<Integer, Long> disponibilites = new HashMap<>();
+        long debutJour = date.toLocalDate().atStartOfDay().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+        try (Connection conn = DbConfig.getConnection()) {
+            boolean hasHeureDisponibilite = hasHeureDisponibiliteColumn(conn);
+
+            String sql = hasHeureDisponibilite
+                ? "SELECT id, heure_disponibilite FROM vehicule"
+                : "SELECT id FROM vehicule";
+
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int idVehicule = rs.getInt("id");
+                    long dispoMs = debutJour;
+
+                    if (hasHeureDisponibilite) {
+                        Time heureDispo = rs.getTime("heure_disponibilite");
+                        if (heureDispo != null) {
+                            LocalTime lt = heureDispo.toLocalTime();
+                            LocalDateTime ldt = LocalDateTime.of(date.toLocalDate(), lt);
+                            dispoMs = Timestamp.valueOf(ldt).getTime();
+                        }
+                    }
+
+                    disponibilites.put(idVehicule, dispoMs);
+                }
+            }
+        }
+
+        return disponibilites;
+    }
+
+    private boolean hasHeureDisponibiliteColumn(Connection conn) throws SQLException {
+        String sql = "SELECT 1 FROM information_schema.columns " +
+                     "WHERE table_schema = current_schema() " +
+                     "AND table_name = 'vehicule' " +
+                     "AND column_name = 'heure_disponibilite'";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next();
+        }
     }
 
     private Vehicule mapVehicule(ResultSet rs) throws SQLException {
