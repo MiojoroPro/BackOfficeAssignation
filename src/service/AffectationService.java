@@ -560,23 +560,73 @@ public class AffectationService {
     }
 
     /**
-     * Mélange les véhicules de même priorité (même capacité + même carburant)
-     * pour introduire l'aléatoire en cas d'égalité parfaite.
-     * L'ordre global est préservé: capacité ASC, Diesel avant Essence.
+     * Ordonne les véhicules selon les règles de sélection:
+     * 1. Capacité la plus proche (moins de place libre)
+     * 2. Moins de trajets pour la date en cours
+     * 3. Diesel en priorité
+     * 4. Choix aléatoire en cas d'égalité parfaite
+     * 
+     * L'ordre global est préservé: capacité ASC, trajets ASC, Diesel before Essence.
      */
     private List<Vehicule> ordonnerVehiculesParPriorite(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
         vehicles.sort(
             Comparator
-                .comparingInt(Vehicule::getCapacite)                                                    // Capacité la plus proche (ASC)
-                .thenComparingLong(v -> disponibiliteInitialeVehicules.getOrDefault(v.getId(), 0L)) // Heure de disponibilité (plus tôt d'abord)
-                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))                 // Moins de trajets
-                .thenComparing(Vehicule::getCarburant)                                                 // Diesel avant Essence
+                .comparingInt(Vehicule::getCapacite)                                      // 1. Capacité la plus proche (ASC)
+                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))    // 2. Moins de trajets
+                .thenComparing(Vehicule::getCarburant)                                    // 3. Diesel avant Essence
         );
         return melangerEgalites(vehicles, trajetsParVehicule, disponibiliteInitialeVehicules);
     }
 
     /**
-     * Mélange les véhicules de même priorité (même capacité, heure de disponibilité, trajets, carburant)
+     * Ordonne les véhicules pour le découpage d'une réservation.
+     * Prend les PLUS GRANDES capacités en premier pour minimiser le nombre de véhicules.
+     * 
+     * 1. Capacité décroissante (plus grand d'abord)
+     * 2. Moins de trajets
+     * 3. Diesel en priorité
+     * 4. Choix aléatoire en cas d'égalité parfaite
+     */
+    private List<Vehicule> ordonnerVehiculesParDecoupage(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
+        vehicles.sort(
+            Comparator
+                .comparingInt(Vehicule::getCapacite).reversed()                          // 1. Capacité décroissante (plus gros d'abord)
+                .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))    // 2. Moins de trajets
+                .thenComparing(Vehicule::getCarburant)                                    // 3. Diesel avant Essence
+        );
+        return melangerEgalitesDecoupage(vehicles, trajetsParVehicule, disponibiliteInitialeVehicules);
+    }
+
+    /**
+     * Mélange les véhicules de même priorité POUR LE DÉCOUPAGE (même capacité DESC, trajets, carburant)
+     * pour introduire l'aléatoire en cas d'égalité parfaite.
+     */
+    private List<Vehicule> melangerEgalitesDecoupage(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
+        List<Vehicule> result = new ArrayList<>();
+        int i = 0;
+        while (i < vehicles.size()) {
+            int j = i;
+            int capacite = vehicles.get(i).getCapacite();
+            int trajets = trajetsParVehicule.getOrDefault(vehicles.get(i).getId(), 0);
+            char carburant = vehicles.get(i).getCarburant();
+
+            while (j < vehicles.size()
+                    && vehicles.get(j).getCapacite() == capacite
+                    && trajetsParVehicule.getOrDefault(vehicles.get(j).getId(), 0) == trajets
+                    && vehicles.get(j).getCarburant() == carburant) {
+                j++;
+            }
+
+            List<Vehicule> group = new ArrayList<>(vehicles.subList(i, j));
+            Collections.shuffle(group, random);
+            result.addAll(group);
+            i = j;
+        }
+        return result;
+    }
+
+    /**
+     * Mélange les véhicules de même priorité (même capacité, trajets, carburant)
      * pour introduire l'aléatoire en cas d'égalité parfaite.
      */
     private List<Vehicule> melangerEgalites(List<Vehicule> vehicles, Map<Integer, Integer> trajetsParVehicule, Map<Integer, Long> disponibiliteInitialeVehicules) {
@@ -585,13 +635,11 @@ public class AffectationService {
         while (i < vehicles.size()) {
             int j = i;
             int capacite = vehicles.get(i).getCapacite();
-            long disponibilite = disponibiliteInitialeVehicules.getOrDefault(vehicles.get(i).getId(), 0L);
             int trajets = trajetsParVehicule.getOrDefault(vehicles.get(i).getId(), 0);
             char carburant = vehicles.get(i).getCarburant();
 
             while (j < vehicles.size()
                     && vehicles.get(j).getCapacite() == capacite
-                    && disponibiliteInitialeVehicules.getOrDefault(vehicles.get(j).getId(), 0L) == disponibilite
                     && trajetsParVehicule.getOrDefault(vehicles.get(j).getId(), 0) == trajets
                     && vehicles.get(j).getCarburant() == carburant) {
                 j++;
@@ -694,13 +742,13 @@ public class AffectationService {
                 continue;
             }
 
-            // Pour couvrir rapidement le reste, on prend d'abord les plus grandes capacités.
-            disponiblesMemeDepart.sort(
-                Comparator
-                    .comparingInt(Vehicule::getCapacite).reversed()
-                    .thenComparingInt(v -> trajetsParVehicule.getOrDefault(v.getId(), 0))
-                    .thenComparing(Vehicule::getCarburant)
-            );
+            // Pour le découpage, on doit prendre les PLUS GRANDES capacités en premier
+            // pour minimiser le nombre de véhicules utilisés.
+            // 1. Capacité décroissante (plus gros d'abord)
+            // 2. Moins de trajets
+            // 3. Diesel en priorité
+            // 4. Choix aléatoire
+            disponiblesMemeDepart = ordonnerVehiculesParDecoupage(disponiblesMemeDepart, trajetsParVehicule, disponibiliteInitialeVehicules);
 
             int restants = reservation.getNombrePassagers();
             List<PortionDecoupage> portions = new ArrayList<>();
