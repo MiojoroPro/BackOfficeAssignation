@@ -193,6 +193,27 @@ public class AffectationService {
     }
 
     /**
+     * Représente les passagers non assignés d'une réservation.
+     * Utilisé quand une réservation n'a pas pu être fully assignée
+     * et reste en attente dans la file.
+     */
+    private static class ReservationPartielle {
+        Reservation reservation;
+        int passagersNonAssignes;  // Nombre de passagers restants à affecter
+        int passagersAssignes;     // Nombre déjà assignés
+
+        ReservationPartielle(Reservation reservation, int passagersNonAssignes) {
+            this.reservation = reservation;
+            this.passagersNonAssignes = passagersNonAssignes;
+            this.passagersAssignes = reservation.getNombrePassagers() - passagersNonAssignes;
+        }
+
+        public int getPassagersTotal() {
+            return reservation.getNombrePassagers();
+        }
+    }
+
+    /**
      * Plan d'affectation d'une réservation découpée.
      */
     private static class PlanDecoupage {
@@ -459,6 +480,19 @@ public class AffectationService {
                     resultat.addReservationNonAffectee(first);
                 }
             }
+        }
+        
+        // PHASE 2 : Gérer les clients non assignés avec réutilisation de véhicules
+        // Les non assignés sont prioritaires et triés en ordre DÉCROISSANT
+        if (!resultat.getReservationsNonAffectees().isEmpty()) {
+            affecterClientsNonAssignes(
+                resultat,
+                aeroport.getId(),
+                parametre,
+                vehiculesOccupes,
+                disponibiliteInitialeVehicules,
+                trajetsParVehicule
+            );
         }
         
         return resultat;
@@ -840,6 +874,117 @@ public class AffectationService {
      */
     public List<Reservation> getReservationsNonAffectees(Date date) throws SQLException {
         return reservationDao.findNonAffecteesByDate(date);
+    }
+
+    /**
+     * PHASE 2 : Affecte les clients non assignés de la PHASE 1.
+     * 
+     * Les non assignés sont prioritaires et traités en ordre DÉCROISSANT (gros d'abord).
+     * Quand un véhicule revient, on essaie de lui assigner les non assignés.
+     * - Si le véhicule est plein après les non assignés → il part immédiatement au moment de son retour
+     * - Si le véhicule n'est pas plein → on attend jusqu'à (retour + temps_attente) pour combiner avec d'autres
+     * 
+     * Les clients normaux non assignés sont prioritaires SAUF si on peut faire du découpage.
+     */
+    private void affecterClientsNonAssignes(
+        ResultatAffectation resultat,
+        int aeroportId,
+        Parametre parametre,
+        Map<Integer, List<long[]>> vehiculesOccupes,
+        Map<Integer, Long> disponibiliteInitialeVehicules,
+        Map<Integer, Integer> trajetsParVehicule
+    ) throws SQLException {
+        List<Reservation> nonAssignes = new ArrayList<>(resultat.getReservationsNonAffectees());
+        resultat.getReservationsNonAffectees().clear();  // Vider la liste (on la reconstruit)
+        
+        // Trier par nombre de passagers DÉCROISSANT (priorité aux gros groupes)
+        nonAssignes.sort((a, b) -> Integer.compare(b.getNombrePassagers(), a.getNombrePassagers()));
+        
+        List<Reservation> pending = new ArrayList<>(nonAssignes);
+        
+        while (!pending.isEmpty()) {
+            Reservation first = pending.remove(0);
+            
+            // Chercher un véhicule capable de porter la réservation
+            List<Vehicule> candidates = vehiculeDao.findVehiculesCapables(first.getNombrePassagers());
+            candidates = ordonnerVehiculesParPriorite(candidates, trajetsParVehicule, disponibiliteInitialeVehicules);
+            
+            boolean assigned = false;
+            
+            for (Vehicule vehicule : candidates) {
+                // Trouver quand ce véhicule sera libre (son dernier retour)
+                long returnTimeMs = trouverDernierRetourVehicule(vehicule.getId(), vehiculesOccupes, disponibiliteInitialeVehicules);
+                
+                // Combiner avec d'autres non assignés si possible
+                List<Reservation> combined = new ArrayList<>();
+                combined.add(first);
+                int remainingCapacity = vehicule.getCapacite() - first.getNombrePassagers();
+                
+                // Essayer d'ajouter les autres réservations non assignées en ordre DÉCROISSANT
+                for (Reservation r : pending) {
+                    if (r.getNombrePassagers() <= remainingCapacity) {
+                        combined.add(r);
+                        remainingCapacity -= r.getNombrePassagers();
+                    }
+                }
+                
+                // Calculer la route et la durée
+                List<RouteStop> route = calculerRoute(aeroportId, combined);
+                int totalMinutes = calculerTempsRoute(aeroportId, route, parametre);
+                long dureeMs = totalMinutes * 60 * 1000L;
+                
+                // Heure de départ
+                long departMs = returnTimeMs;
+                long finMs = departMs + dureeMs;
+                
+                // Vérifier qu'il n'y a pas de conflit
+                if (estDisponible(vehicule.getId(), departMs, finMs, vehiculesOccupes)) {
+                    Timestamp departure = new Timestamp(departMs);
+                    Timestamp returnTime = new Timestamp(finMs);
+                    
+                    // Affecter toutes les réservations combinées
+                    for (Reservation r : combined) {
+                        int order = getStopOrder(r.getIdLieuDestination(), route);
+                        enregistrerAffectation(vehicule, r, departure, returnTime, order, r.getNombrePassagers(), resultat);
+                    }
+                    
+                    // Retirer du pending et de la liste de résultats
+                    for (int i = 1; i < combined.size(); i++) {
+                        pending.remove(combined.get(i));
+                    }
+                    
+                    // Marquer le créneau comme occupé
+                    vehiculesOccupes.computeIfAbsent(vehicule.getId(), k -> new ArrayList<>())
+                        .add(new long[]{departMs, finMs});
+                    incrementerTrajets(vehicule.getId(), trajetsParVehicule);
+                    
+                    assigned = true;
+                    break;
+                }
+            }
+            
+            // Si on n'a pas pu assigner, ajouter à la liste finale des non assignés
+            if (!assigned) {
+                resultat.addReservationNonAffectee(first);
+            }
+        }
+    }
+
+    /**
+     * Retourne le timestamp du dernier retour d'un véhicule pour la journée
+     */
+    private long trouverDernierRetourVehicule(int vehiculeId, Map<Integer, List<long[]>> vehiculesOccupes, Map<Integer, Long> disponibiliteInitialeVehicules) {
+        List<long[]> creneaux = vehiculesOccupes.get(vehiculeId);
+        if (creneaux == null || creneaux.isEmpty()) {
+            // Véhicule jamais utilisé, on utilise sa disponibilité initiale
+            return disponibiliteInitialeVehicules.getOrDefault(vehiculeId, System.currentTimeMillis());
+        }
+        
+        // Retourner l'heure de fin du dernier créneau
+        return creneaux.stream()
+            .mapToLong(c -> c[1])
+            .max()
+            .orElse(disponibiliteInitialeVehicules.getOrDefault(vehiculeId, System.currentTimeMillis()));
     }
 
     /**

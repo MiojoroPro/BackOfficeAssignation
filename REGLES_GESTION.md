@@ -282,3 +282,15 @@ Livraisons:
 - ⚠️ **Splitting**: Le découpage garde la réservation groupée (tous les passagers d'une réservation partent au même moment)
 - ⚠️ **Fenêtres**: Les clients dans la même fenêtre partent **ensemble** (même heure de départ)
 - ✅ **Capacité**: La somme des capacités affectées peut être > capacité du groupe (par splitting)
+
+## SPRINT 8
+PHASE 1 (existant): Affectation normale
+├─ Groupes par fenêtre temps
+├─ Tri CROISSANT (petits groupes OK)
+└─ Certaines réservations → non assignées
+
+PHASE 2 (NOUVEAU): Réutilisation véhicules
+├─ Non assignés triés DÉCROISSANT (priorité gros)
+├─ Pour chaque véhicule qui revient
+├─ Assigner les non assignés immédiatement  
+└─ Départ = heure retour du dernier trajet du véhicule
